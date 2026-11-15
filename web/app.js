@@ -32,6 +32,8 @@ function render() {
   S.cur = cur;
   const on = Number(st.power) === 1;
   const playing = st.mode === "play";
+  const clr = playing ? "清除其他曲目（保留正在播放）" : "清除当前播放";
+  if ($("btn-clear").title !== clr) { $("btn-clear").title = clr; $("btn-clear").setAttribute("aria-label", clr); }
 
   $("player").classList.toggle("off", !on);
   $("btn-play").classList.toggle("playing", playing);   // 只切换显示哪个 SVG 图形，不写字符
@@ -176,9 +178,17 @@ async function saveQueue() {
   });
 }
 
+/* 队列里当前曲目的标记：播放 ▶、暂停 ❙❙、停止 ■。用 SVG 画，避免 iOS 把符号显示成彩色 emoji */
+const QMARK = {
+  play: `<svg class="qmark" viewBox="0 0 12 12" aria-label="播放中"><path d="M2.5 1.5v9l8-4.5z"/></svg>`,
+  pause: `<svg class="qmark" viewBox="0 0 12 12" aria-label="已暂停"><rect x="2" y="1.5" width="3" height="9" rx=".8"/><rect x="7" y="1.5" width="3" height="9" rx=".8"/></svg>`,
+  stop: `<svg class="qmark" viewBox="0 0 12 12" aria-label="已停止"><rect x="2" y="2" width="8" height="8" rx="1"/></svg>`,
+};
+
 function renderQueue(loop, curIdx) {
   if (S.dragging) return;   // 拖动排序时不重绘，松手后再刷新
-  const key = Number(S.st.playlist_timestamp) + ":" + curIdx;
+  const mode = QMARK[S.st.mode] ? S.st.mode : "stop";
+  const key = Number(S.st.playlist_timestamp) + ":" + curIdx + ":" + mode;   // 播放 / 暂停切换时也要重绘标记
   if (key === S.queueKey) return;
   S.queueKey = key;
   const box = $("cur-list");
@@ -196,7 +206,7 @@ function renderQueue(loop, curIdx) {
     const cls = i === curIdx ? "playing" : i < curIdx ? "past" : "";
     const cid = coverOf(t);
     return `<tr class="${cls}" data-idx="${i}">
-      <td class="num">${i === curIdx ? "▶\uFE0E" : i + 1}</td>
+      <td class="num">${i === curIdx ? QMARK[mode] : i + 1}</td>
       <td class="cv">${cid ? `<img src="${LMS.cover(cid, 100)}" alt="" loading="lazy">` : `<span class="ph"></span>`}</td>
       <td>${esc(t.title)}</td><td>${esc(t.artist || "")}</td><td>${esc(t.album || "")}</td>
       <td class="dur">${t.duration ? fmtTime(t.duration) : ""}</td>
@@ -490,7 +500,18 @@ function bindPlayer() {
     $("app").classList.toggle("queue-open", !q.hidden);
     $("btn-queue").classList.toggle("on", !q.hidden);
   };
-  $("btn-clear").onclick = () => { if (confirm("清除整个播放队列？")) act(LMS.clear); };
+  // 正在播放时只清除其他曲目，当前这首保留并继续播放；暂停或停止时清除整个队列
+  $("btn-clear").onclick = () => {
+    const st = S.st || {};
+    const n = Number(st.playlist_tracks) || 0;
+    if (st.mode === "play" && S.cur) {
+      if (n <= 1) return toast("只有正在播放的这一首，没有其他曲目可清除");
+      if (!confirm(`保留正在播放的「${S.cur.title || "当前曲目"}」，清除其余 ${n - 1} 首？`)) return;
+      S.queueKey = "";
+      return act(async () => { const k = await LMS.clearOthers(); toast(`已清除 ${k} 首，正在播放的保留`); }, "清除失败");
+    }
+    if (confirm("清除整个播放队列？")) act(LMS.clear);
+  };
   $("btn-save").onclick = saveQueue;
   bindReorder();
   // 当前播放：向左滑动一行即从队列移除

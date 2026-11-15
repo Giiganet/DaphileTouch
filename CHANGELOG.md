@@ -3,6 +3,14 @@
 All notable changes to this project are documented here.
 Versions follow [Semantic Versioning](https://semver.org/).
 
+## [0.3.4] - 2026-11-15
+
+### Changed
+- The clear button in Now Playing now keeps the current track while it is playing: it removes all the other tracks and the music carries on without a break. When playback is paused or stopped, it clears the whole queue as before.
+
+### Fixed
+- In Now Playing the current track was always marked with a play triangle, even when paused. It now shows a triangle while playing, two bars when paused and a square when stopped, drawn as icons so iPad does not turn them into colour emoji.
+
 ## [0.3.3] - 2026-11-15
 
 ### Added

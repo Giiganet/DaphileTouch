@@ -169,6 +169,7 @@ img { display: block; }
 .tracks .num { width: 44px; }
 .tracks .dur { width: 64px; text-align: right; }
 .tracks tr.playing td { color: var(--accent); font-weight: 600; }
+.tracks td.num .qmark { width: 11px; height: 11px; fill: currentColor; vertical-align: -1px; }
 
 /* 专辑详情头部 */
 .album-head { display: flex; gap: 24px; align-items: flex-end; margin: 12px 0 20px; }

@@ -72,6 +72,16 @@ const LMS = (() => {
     volume: (v) => p(["mixer", "volume", String(v)]),
     clear: () => p(["playlist", "clear"]),
     deleteAt: (idx) => p(["playlist", "delete", String(idx)]),
+    /* 清除当前播放但保留正在播放的那首：先从队尾往前删它后面的，再逐个删第 0 首直到它成为第一首。
+       删的都不是当前曲目，LMS 只顺移当前位置，不会中断播放。返回删掉的曲目数。 */
+    clearOthers: async () => {
+      const st = await p(["status", "-", 1]);
+      const n = Number(st.playlist_tracks) || 0;
+      const cur = Number(st.playlist_cur_index) || 0;
+      for (let i = n - 1; i > cur; i--) await p(["playlist", "delete", String(i)]);
+      for (let i = 0; i < cur; i++) await p(["playlist", "delete", "0"]);
+      return Math.max(0, n - 1);
+    },
     /* 把队列里第 from 首移到第 to 位（从 0 开始），LMS 会自动修正正在播放的位置 */
     move: (from, to) => p(["playlist", "move", String(from), String(to)]),
     /* AirPlay 转移：把 from 的整个队列、当前曲目和进度搬到 to 上接着放，from 暂停。
