@@ -3,6 +3,17 @@
 All notable changes to this project are documented here.
 Versions follow [Semantic Versioning](https://semver.org/).
 
+## [0.2.0] - 2026-11-15
+
+### Changed
+- In the library browser, tap a track to add it to the end of the queue; the row flashes briefly to confirm. The **＋** button is now only on folders, favorite folders and album folders (and the "Add whole album" buttons).
+- Favorites: tap a track to add it to the queue.
+- The light / dark theme now follows the system setting automatically (including iPad's Automatic appearance). Flipping the switch overrides it until the system appearance changes next time.
+- The output device list marks the current device with a small circle instead of a check box.
+
+### Fixed
+- Tapping a grey (alternating) row gave no visual feedback; it now darkens like the white rows.
+
 ## [0.1.2] - 2026-11-15
 
 ### Changed

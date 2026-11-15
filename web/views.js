@@ -170,45 +170,52 @@ const Views = (() => {
     }, "加入喜爱失败")).finally(() => { btn.disabled = false; });
   }
 
-  /* 歌曲表格：最右一列是「＋」 */
+  /* 歌曲表格：点整行加入当前播放；最右一列是心形 */
   function trackTable(tracks, opt = {}) {
     if (!tracks.length) return empty("没有歌曲");
     return `<table class="tracks"><thead><tr>
-      ${opt.num ? `<th class="num">#</th>` : ""}<th>标题</th><th class="dur">时长</th><th class="fav"></th><th class="plus"></th>
+      ${opt.num ? `<th class="num">#</th>` : ""}<th>标题</th><th class="dur">时长</th><th class="fav"></th>
     </tr></thead><tbody>${tracks.map((t, i) => trackRow(t, i, opt)).join("")}</tbody></table>`;
   }
   const trackRow = (t, i, opt) => `<tr data-i="${i}" data-id="${t.id}" data-title="${esc(t.title)}">
       ${opt.num ? `<td class="num">${esc(t.tracknum || i + 1)}</td>` : ""}
       <td class="ttl">${esc(t.title)}${opt.artist ? `<div class="sub">${esc([t.artist, t.album].filter(Boolean).join(" — "))}</div>` : ""}</td>
       <td class="dur">${t.duration ? fmtTime(t.duration) : ""}</td>
-      <td class="fav">${favBtn()}</td>
-      <td class="plus">${plusBtn("data-plus")}</td></tr>`;
+      <td class="fav">${favBtn()}</td></tr>`;
 
-  /* ---------- 选曲：点行尾「＋」把单曲加到当前播放末尾 ---------- */
-  function addOne(btn) {
-    const row = btn.closest("[data-id]");
-    if (!row || btn.disabled) return;
-    btn.disabled = true;
-    Promise.resolve(act(async () => {
-      await LMS.addTracks([row.dataset.id]);
-      toast(`已加入：${row.dataset.title || "1 首"}`);
-      flashDone(btn);
-    })).finally(() => { btn.disabled = false; });
+  /* ---------- 选曲：点单曲那一行，把它加到当前播放末尾 ----------
+     加入成功后整行闪一下强调色；请求进行中再点同一行不重复加入 */
+  function flashRow(row) {
+    row.classList.remove("added");
+    void row.offsetWidth;            // 连续点同一行时让动画重新开始
+    row.classList.add("added");
+    setTimeout(() => row.classList.remove("added"), 900);
   }
-  /* 选曲窗口里的点击：「＋」加入单曲；other 处理其余点击（如进入专辑、整张加入） */
+  function addRow(row, add, title) {
+    if (row.dataset.busy) return;
+    row.dataset.busy = "1";
+    Promise.resolve(act(async () => {
+      await add();
+      toast(`已加入：${title || "1 首"}`);
+      flashRow(row);
+    })).finally(() => { delete row.dataset.busy; });
+  }
+  /* 选曲窗口里的点击：心形加入喜爱；单曲行加入当前播放；other 处理其余点击（进入目录、目录和整张的「＋」） */
   function bindTracks(other) {
     content().onclick = (e) => {
-      const b = e.target.closest("[data-plus]");
-      if (b) return addOne(b);
       const h = e.target.closest("[data-fav]");
       if (h) return addFav(h);
+      if (!e.target.closest("[data-add], [data-addall]")) {
+        const row = e.target.closest("tr[data-id], li[data-id]");
+        if (row) return addRow(row, () => LMS.addTracks([row.dataset.id]), row.dataset.title);
+      }
       if (other) other(e);
     };
   }
 
   /* ---------- 歌曲（全部，分页） ---------- */
   function songs(extra = []) {
-    reset(`<table class="tracks"><thead><tr><th>标题</th><th class="dur">时长</th><th class="fav"></th><th class="plus"></th></tr></thead><tbody id="tb"></tbody></table>`);
+    reset(`<table class="tracks"><thead><tr><th>标题</th><th class="dur">时长</th><th class="fav"></th></tr></thead><tbody id="tb"></tbody></table>`);
     setTitle("");   // 顶部已有「歌曲」
     const tb = document.getElementById("tb");
     pager = paged((s, n) => LMS.songs(s, n, extra), (r, s) => (r.titles_loop || []).map((t, i) => trackRow(t, s + i, { artist: true })).join(""),
@@ -218,12 +225,15 @@ const Views = (() => {
 
   /* ---------- 通用列表 ---------- */
   function list(title, items, onPick) {
-    // it.track：单曲（行尾心形和「＋」）；it.add：整项（文件夹/播放列表）加到当前播放末尾
+    // it.track：单曲（行尾心形，点整行加入）；it.add：
+    //   目录（it.more，文件夹/收藏夹）→ 行尾「＋」整个加入，点行进入；
+    //   单项（喜爱里的曲目）→ 没有「＋」，点整行加入
+    const single = (it) => !it.track && it.add && !it.more;
     reset(items.length ? `<ul class="list" id="ls">${items.map((it, i) => `
       <li data-i="${i}"${it.track ? ` data-id="${it.id}" data-title="${esc(it.name)}"` : ""}${it.swipe ? ` data-swipe="${esc(it.swipe)}" data-title="${esc(it.name)}"` : ""}>
         ${it.lead || (it.thumb !== undefined ? thumb(it.thumb) : "")}
         <div class="grow">${esc(it.name)}${it.sub ? `<div class="sub">${esc(it.sub)}</div>` : ""}</div>
-        ${it.track ? favBtn() + plusBtn("data-plus") : it.add ? plusBtn(`data-add="${i}"`) : ""}
+        ${it.track ? favBtn() : it.add && it.more ? plusBtn(`data-add="${i}"`) : ""}
         ${it.more ? `<span style="color:var(--text3)">›</span>` : ""}
       </li>`).join("")}</ul>` : empty("没有内容"));
     // title 为空：分类首页（文件夹、收藏），数量放窗口顶部；否则是子目录，数量放详情标题行
@@ -233,7 +243,10 @@ const Views = (() => {
       const ab = e.target.closest("[data-add]");
       if (ab) return act(async () => { await items[ab.dataset.add].add(); toast(`已加入：${items[ab.dataset.add].name}`); flashDone(ab); });
       const li = e.target.closest("li[data-i]");
-      if (li) onPick(items[li.dataset.i]);
+      if (!li) return;
+      const it = items[li.dataset.i];
+      if (single(it)) return addRow(li, it.add, it.name);
+      onPick(it);
     });
   }
 
@@ -463,7 +476,7 @@ const Views = (() => {
     content().innerHTML = `
       ${ar.length ? `<div class="section-h">艺人</div><ul class="list">${ar.map((a) => `<li data-artist="${a.contributor_id}" data-name="${esc(a.contributor)}"><div class="grow">${esc(a.contributor)}</div><span style="color:var(--text3)">›</span></li>`).join("")}</ul>` : ""}
       ${al.length ? `<div class="section-h">专辑</div><ul class="list">${al.map((a) => `<li data-album="${a.album_id}"><div class="grow">${esc(a.album)}</div><span style="color:var(--text3)">›</span></li>`).join("")}</ul>` : ""}
-      ${tr.length ? `<div class="section-h">歌曲</div><ul class="list">${tr.map((t) => `<li data-id="${t.track_id}" data-title="${esc(t.track)}"><div class="grow">${esc(t.track)}</div>${favBtn()}${plusBtn("data-plus")}</li>`).join("")}</ul>` : ""}`;
+      ${tr.length ? `<div class="section-h">歌曲</div><ul class="list">${tr.map((t) => `<li data-id="${t.track_id}" data-title="${esc(t.track)}"><div class="grow">${esc(t.track)}</div>${favBtn()}</li>`).join("")}</ul>` : ""}`;
     bindTracks((e) => {
       const li = e.target.closest("li");
       if (!li) return;

@@ -140,7 +140,13 @@ img { display: block; }
 .lead.lead-track, .lead.lead-other { color: var(--text2); }
 .lead.has-art { background: none; }
 .lead img { display: block; width: 100%; height: 100%; object-fit: cover; }
-.list li:active, .tracks tr:active { background: var(--hover); }
+/* 点按反馈：灰色（隔行）底色画在单元格上，所以要连单元格一起加深，否则灰色行被点时看不出变化 */
+.list li:active, .tracks tbody tr:active, .tracks tbody tr:active > td { background: var(--hover); }
+/* 点单曲加入当前播放成功：整行闪一下浅浅的强调色 */
+:root { --flash: rgba(10, 122, 255, .18); }
+:root[data-theme="dark"] { --flash: rgba(59, 155, 255, .26); }
+@keyframes row-added { from { background-color: var(--flash); } }
+.list li.added, .tracks tr.added > td { animation: row-added .9s ease-out; }
 .section-h { font-size: 18px; font-weight: 700; margin: 20px 0 8px; }
 
 /* 歌曲表格 */
@@ -366,8 +372,7 @@ img { display: block; }
 .picker .album-head .artist { font-size: 15px; }
 .picker .actions { margin: 4px 0 10px; }
 
-/* 行尾「＋」：灰圆 24px（原 44px），点击区仍向外扩 8px，手指好点 */
-.tracks .plus { width: 40px; text-align: center; padding: 0 4px; }
+/* 目录行尾「＋」（文件夹、收藏夹、专辑目录）：灰圆 24px，点击区向外扩 8px，手指好点 */
 .add-btn {
   position: relative; flex: none;
   width: 24px; height: 24px; border-radius: 50%;
@@ -435,9 +440,15 @@ img { display: block; }
 .device-list .dev-ico { width: 24px; color: var(--text2); display: flex; justify-content: center; flex: none; }
 .device-list .dev-name { flex: 1; min-width: 0; font-size: 15px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .device-list .dev-name small { margin-left: 6px; font-size: 12px; color: var(--text3); }
-.device-list .dev-chk { width: 22px; height: 22px; border-radius: 6px; background: var(--row); border: 1px solid var(--line); flex: none; }
-.device-list li.cur .dev-chk { background: var(--hover); position: relative; }
-.device-list li.cur .dev-chk::after { content: "✓"; position: absolute; inset: 0; text-align: center; line-height: 20px; font-size: 14px; color: var(--text2); }
+/* 选中标记：小圆圈。未选中是空心圈；选中的圈变成强调色，中间一个实心圆点 */
+.device-list .dev-chk {
+  position: relative; width: 20px; height: 20px; flex: none; box-sizing: border-box;
+  border-radius: 50%; border: 1.5px solid var(--text3); background: none;
+}
+.device-list li.cur .dev-chk { border-color: var(--accent); }
+.device-list li.cur .dev-chk::after {
+  content: ""; position: absolute; inset: 3.5px; border-radius: 50%; background: var(--accent);
+}
 .device-list li.offline { opacity: .45; cursor: default; }
 .device-list .dev-empty { color: var(--text2); font-size: 13px; justify-content: center; cursor: default; }
 

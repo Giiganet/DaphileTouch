@@ -8,10 +8,12 @@
 <meta name="apple-mobile-web-app-title" content="Daphile">
 <meta name="color-scheme" content="light dark">
 <title>Daphile 音乐</title>
-<script>/* 先定深浅色再画页面，避免闪一下 */
-(function () { var t = null; try { t = localStorage.getItem("daphile.theme"); } catch (e) {}
-  document.documentElement.dataset.theme = t || (matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light"); })();</script>
-<link rel="stylesheet" href="style.css?v=0.1.2">
+<script>/* 先定深浅色再画页面，避免闪一下。默认跟随系统；
+   手动拨过开关时记成「主题@当时的系统主题」，系统主题变了这次手动选择就作废，重新跟随系统 */
+(function () { var sys = matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light", o = null;
+  try { localStorage.removeItem("daphile.theme"); o = (localStorage.getItem("daphile.themeOverride") || "").split("@"); } catch (e) {}
+  document.documentElement.dataset.theme = o && o[1] === sys && (o[0] === "dark" || o[0] === "light") ? o[0] : sys; })();</script>
+<link rel="stylesheet" href="style.css?v=0.2.0">
 </head>
 <body>
 <div class="app" id="app">
@@ -35,7 +37,7 @@
         <span class="ts-track" aria-hidden="true"><span class="ts-knob"></span></span>
         <svg class="ts-moon" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 14.6A8.2 8.2 0 0 1 9.4 4a8.2 8.2 0 1 0 10.6 10.6z"/></svg>
       </button>
-      <div class="app-ver" id="app-ver" aria-label="版本">v0.1.2</div>
+      <div class="app-ver" id="app-ver" aria-label="版本">v0.2.0</div>
     </div>
   </nav>
 
@@ -184,8 +186,8 @@
 </div>
 
 <div class="toast" id="toast" hidden></div>
-<script src="api.js?v=0.1.2"></script>
-<script src="views.js?v=0.1.2"></script>
-<script src="app.js?v=0.1.2"></script>
+<script src="api.js?v=0.2.0"></script>
+<script src="views.js?v=0.2.0"></script>
+<script src="app.js?v=0.2.0"></script>
 </body>
 </html>

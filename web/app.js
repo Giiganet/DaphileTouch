@@ -339,9 +339,13 @@ function bindSwipe(box, rowSel, onDelete) {
   box.addEventListener("pointercancel", end(false));
 }
 
-/* 左下角深浅界面开关：选择记在本机；没选过时跟随系统 */
+/* 左下角深浅界面开关：默认跟随系统（iPad「自动」深浅色到点就切换）。
+   手动拨开关只临时盖过系统：记成「主题@当时的系统主题」，系统下次切换时作废，重新跟随系统；
+   拨回与系统相同的主题也等于恢复跟随。 */
 function bindTheme() {
-  const KEY = "daphile.theme", root = document.documentElement, btn = $("btn-theme");
+  const KEY = "daphile.themeOverride", root = document.documentElement, btn = $("btn-theme");
+  const mq = matchMedia("(prefers-color-scheme: dark)");
+  const sysTheme = () => (mq.matches ? "dark" : "light");
   const sync = () => {
     const dark = root.dataset.theme === "dark";
     btn.setAttribute("aria-checked", String(dark));
@@ -355,15 +359,19 @@ function bindTheme() {
     sync();
   };
   btn.onclick = () => {
-    const t = root.dataset.theme === "dark" ? "light" : "dark";
-    try { localStorage.setItem(KEY, t); } catch (e) { /* 存不了就只对本次有效 */ }
+    const t = root.dataset.theme === "dark" ? "light" : "dark", sys = sysTheme();
+    try {
+      if (t === sys) localStorage.removeItem(KEY);       // 与系统一致：回到跟随系统
+      else localStorage.setItem(KEY, t + "@" + sys);
+    } catch (e) { /* 存不了就只对本次有效 */ }
     apply(t);
   };
-  matchMedia("(prefers-color-scheme: dark)").addEventListener("change", (e) => {
-    let saved = null;
-    try { saved = localStorage.getItem(KEY); } catch (_) { /* 忽略 */ }
-    if (!saved) apply(e.matches ? "dark" : "light");
-  });
+  const onSys = () => {
+    try { localStorage.removeItem(KEY); } catch (_) { /* 忽略 */ }
+    apply(sysTheme());
+  };
+  if (mq.addEventListener) mq.addEventListener("change", onSys);
+  else if (mq.addListener) mq.addListener(onSys);         // 老版 Safari（iOS 13 及以前）
   sync();
 }
 
@@ -390,6 +398,8 @@ function bindPlayer() {
   $("btn-shuffle").onclick = () => act(() => LMS.shuffle(Number(S.st?.["playlist shuffle"]) > 0 ? 0 : 1));
   $("btn-repeat").onclick = () => act(() => LMS.repeat((Number(S.st?.["playlist repeat"]) + 1) % 3));
   bindTheme();
+  // iOS Safari 只有页面上挂了 touchstart 监听时，手指按住才会触发 :active（行被点时的加深底色）
+  document.addEventListener("touchstart", () => {}, { passive: true });
   $("btn-queue").onclick = () => {
     const q = $("queue");
     q.hidden = !q.hidden;
