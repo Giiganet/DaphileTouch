@@ -1,0 +1,13 @@
+# 打包产物：上传到 GitHub Releases，不进仓库
+dist/
+
+# 系统与编辑器文件
+.DS_Store
+*.swp
+__pycache__/
+*.pyc
+
+# 本地临时测试页与私人配置
+web/_t*.html
+*.local.*
+.env

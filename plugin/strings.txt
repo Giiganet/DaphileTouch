@@ -1,0 +1,7 @@
+PLUGIN_DAPHILETOUCH
+	EN	DaphileTouch
+	ZH_CN	DaphileTouch 平板播放屏
+
+PLUGIN_DAPHILETOUCH_DESC
+	EN	Touch-friendly web player for tablets (iPad landscape), styled after Apple Music. Open http://<server>:9000/plugins/DaphileTouch/index.html
+	ZH_CN	为平板（iPad 横屏）设计的网页播放界面，布局仿「音乐」app。打开 http://<服务器>:9000/plugins/DaphileTouch/index.html

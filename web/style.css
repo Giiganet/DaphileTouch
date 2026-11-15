@@ -1,0 +1,508 @@
+/* Daphile 播放屏 — 仿 macOS「音乐」：左边栏 + 主区 + 右侧队列 + 底部悬浮播放条 */
+:root {
+  --bg: #ffffff;
+  --side: #f0f0f2;
+  --text: #1d1d1f;
+  --text2: #6e6e73;
+  --text3: #9a9aa0;
+  --line: #e5e5ea;
+  --row: #f6f6f8;
+  --hover: #e3e3e8;
+  --accent: #0a7aff;
+  --danger: #ff3b30;
+  --bar-bg: rgba(250, 250, 252, 0.96);
+  --shadow: 0 6px 24px rgba(0, 0, 0, 0.12);
+  --font: -apple-system, BlinkMacSystemFont, "SF Pro Text", "PingFang SC", "Helvetica Neue", sans-serif;
+  --side-w: 168px;
+  --queue-w: 260px;
+  color-scheme: light;
+}
+/* 深色风格：由左下角开关切换（html[data-theme]），选择记在本机，首次按系统设置 */
+:root[data-theme="dark"] {
+  --bg: #1e1e1e;
+  --side: #282829;
+  --text: #f5f5f7;
+  --text2: #a1a1a6;
+  --text3: #7d7d83;
+  --line: #333336;
+  --row: #2a2a2c;
+  --hover: #3a3a3c;
+  --accent: #3b9bff;
+  --danger: #ff453a;
+  --bar-bg: rgba(42, 42, 44, 0.94);
+  --shadow: 0 8px 28px rgba(0, 0, 0, 0.55);
+  color-scheme: dark;
+}
+
+* { box-sizing: border-box; }
+html, body { height: 100%; margin: 0; }
+body {
+  font: 14px/1.4 var(--font);
+  color: var(--text);
+  background: var(--bg);
+  -webkit-font-smoothing: antialiased;
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
+  overflow: hidden;
+}
+button { font: inherit; color: inherit; background: none; border: 0; cursor: pointer; }
+img { display: block; }
+
+.app {
+  display: grid;
+  grid-template-columns: var(--side-w) 1fr auto;
+  height: 100%;
+  padding: env(safe-area-inset-top, 0) env(safe-area-inset-right, 0) 0 env(safe-area-inset-left, 0);
+}
+
+/* ---------- 左边栏 ---------- */
+.sidebar {
+  background: var(--side);
+  border-right: 1px solid var(--line);
+  padding: 12px 8px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+}
+.nav-group { font-size: 11px; color: var(--text3); margin: 14px 8px 4px; }
+.nav-item {
+  display: flex; align-items: center; gap: 10px;
+  width: 100%; min-height: 40px; padding: 0 8px;
+  border-radius: 8px; text-align: left; font-size: 15px;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+/* 侧边栏图标：22px（原字符约 15px），蓝色线条 */
+.nav-item .ico {
+  width: 22px; height: 22px; flex: none;
+  fill: none; stroke: var(--accent); stroke-width: 1.9; stroke-linecap: round; stroke-linejoin: round;
+}
+.nav-item.active { background: var(--hover); font-weight: 600; }
+.sidebar-foot {
+  margin-top: auto; padding: 10px 8px 4px;
+  display: flex; align-items: center; gap: 8px;
+  font-size: 13px; color: var(--text2);
+}
+.dot { width: 8px; height: 8px; border-radius: 50%; background: var(--text3); flex: none; }
+.dot.ok { background: #34c759; }
+.dot.bad { background: var(--danger); }
+
+/* ---------- 主区 ---------- */
+.main { position: relative; display: flex; flex-direction: column; min-width: 0; }
+.topbar {
+  display: flex; align-items: center; gap: 10px;
+  height: 52px; padding: 0 16px; flex: none;
+}
+.view-title { font-size: 15px; font-weight: 600; margin: 0; flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.filter {
+  width: 200px; height: 32px; padding: 0 12px;
+  border: 1px solid var(--line); border-radius: 16px;
+  background: var(--row); color: var(--text); font: inherit; font-size: 13px;
+}
+.filter:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
+.content {
+  flex: 1; overflow-y: auto; -webkit-overflow-scrolling: touch;
+  padding: 4px 20px 110px;   /* 底部给悬浮播放条留位 */
+}
+.empty { color: var(--text2); text-align: center; padding: 80px 0; font-size: 16px; }
+
+/* 专辑网格：iPad 9（1080 宽）为 4 列 */
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 20px 18px;
+}
+.card { text-align: left; min-width: 0; }
+.card .art {
+  width: 100%; aspect-ratio: 1; border-radius: 8px;
+  background: var(--row); object-fit: cover;
+  box-shadow: 0 1px 4px rgba(0,0,0,.12);
+}
+.card .t1 { margin-top: 6px; font-size: 13px; font-weight: 600; }
+.card .t2 { font-size: 12px; color: var(--text2); }
+.card .t1, .card .t2 { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.more-sentinel { height: 1px; }
+
+/* 列表（艺人、流派、文件夹、播放列表、收藏、搜索） */
+.list { list-style: none; margin: 0; padding: 0; }
+.list li {
+  display: flex; align-items: center; gap: 12px;
+  min-height: 48px; padding: 4px 8px;
+  border-bottom: 1px solid var(--line);
+}
+.list li .grow { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.list li .sub { color: var(--text2); font-size: 12px; }
+.list li .thumb { width: 40px; height: 40px; border-radius: 4px; background: var(--row); object-fit: cover; flex: none; }
+/* 文件夹行首：40px 灰色圆角方块里放图标；专辑目录有封面时换成封面 */
+.list li .lead {
+  width: 40px; height: 40px; border-radius: 6px; flex: none; overflow: hidden;
+  display: inline-flex; align-items: center; justify-content: center;
+  background: var(--row); color: var(--accent);
+}
+.lead .row-ico { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 1.9; stroke-linecap: round; stroke-linejoin: round; }
+.lead.lead-track, .lead.lead-other { color: var(--text2); }
+.lead.has-art { background: none; }
+.lead img { display: block; width: 100%; height: 100%; object-fit: cover; }
+.list li:active, .tracks tr:active { background: var(--hover); }
+.section-h { font-size: 18px; font-weight: 700; margin: 20px 0 8px; }
+
+/* 歌曲表格 */
+.tracks { width: 100%; border-collapse: collapse; table-layout: fixed; font-size: 13px; }
+.tracks th { text-align: left; font-weight: 400; color: var(--text2); font-size: 12px; padding: 6px 8px; border-bottom: 1px solid var(--line); }
+.tracks td { padding: 0 8px; height: 40px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tracks tr:nth-child(even) td { background: var(--row); }
+.tracks .num, .tracks .dur { color: var(--text2); font-variant-numeric: tabular-nums; }
+.tracks .num { width: 44px; }
+.tracks .dur { width: 64px; text-align: right; }
+.tracks tr.playing td { color: var(--accent); font-weight: 600; }
+
+/* 专辑详情头部 */
+.album-head { display: flex; gap: 24px; align-items: flex-end; margin: 12px 0 20px; }
+.album-head .art { width: 200px; height: 200px; border-radius: 8px; object-fit: cover; background: var(--row); box-shadow: var(--shadow); flex: none; }
+.album-head h2 { font-size: 24px; margin: 0 0 4px; }
+.album-head .artist { color: var(--accent); font-size: 20px; }
+.album-head .meta { color: var(--text2); font-size: 12px; margin-top: 4px; }
+.actions { display: flex; gap: 12px; margin-top: 18px; align-items: center; }
+.pill {
+  min-width: 0; height: 30px; padding: 0 14px; border-radius: 15px; font-size: 14px;
+  background: var(--text); color: var(--bg); font-weight: 600;
+}
+.round { width: 44px; height: 44px; border-radius: 50%; background: var(--row); font-size: 18px; }
+
+/* ---------- 右侧队列 ---------- */
+.queue {
+  width: var(--queue-w); border-left: 1px solid var(--line);
+  background: var(--side); display: flex; flex-direction: column; min-height: 0;
+}
+.queue[hidden] { display: none; }
+.queue-head { display: flex; justify-content: space-between; align-items: center; height: 52px; padding: 0 14px; }
+.link-btn { min-height: 44px; padding: 0 4px; font-size: 13px; }
+.danger { color: var(--danger); }
+.panel-scroll { flex: 1; min-height: 0; overflow-y: auto; -webkit-overflow-scrolling: touch; padding-bottom: 110px; }
+.queue-list { list-style: none; margin: 0; padding: 0 8px; }
+
+/* 正在播放信息 */
+.np { padding: 18px 16px 8px; border-bottom: 1px solid var(--line); }
+.np-art { width: 100%; aspect-ratio: 1; border-radius: 8px; object-fit: cover; background: var(--row); box-shadow: var(--shadow); }
+.np-art[hidden] { display: none; }
+.np-art-empty { display: flex; align-items: center; justify-content: center; font-size: 64px; color: var(--text3); }
+.np-title { margin-top: 14px; font-size: 17px; font-weight: 700; line-height: 1.3; word-break: break-word; }
+.np-artist { margin-top: 2px; font-size: 14px; color: var(--accent); }
+.np-meta { display: grid; grid-template-columns: auto 1fr; gap: 6px 12px; margin: 14px 0 10px; font-size: 13px; }
+.np-meta dt { color: var(--text2); white-space: nowrap; }
+.np-meta dd { margin: 0; min-width: 0; word-break: break-word; }
+.queue-list li { display: flex; gap: 10px; align-items: center; min-height: 52px; padding: 4px 6px; border-radius: 6px; }
+.queue-list li.cur { background: var(--hover); }
+.queue-list li.past { opacity: .5; }
+.queue-list img { width: 40px; height: 40px; border-radius: 4px; object-fit: cover; background: var(--row); flex: none; }
+.queue-list .q1 { font-size: 13px; }
+.queue-list .q2 { font-size: 12px; color: var(--text2); }
+.queue-list .q1, .queue-list .q2 { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+/* ---------- 底部悬浮播放条 ---------- */
+.player {
+  position: fixed; z-index: 10;
+  left: calc(var(--side-w) + 16px); right: 16px;
+  bottom: calc(12px + env(safe-area-inset-bottom, 0px));
+  height: 64px; padding: 0 12px;
+  display: flex; align-items: center; gap: 12px;
+  background: var(--bar-bg); border: 1px solid var(--line);
+  border-radius: 32px; box-shadow: var(--shadow);
+}
+.app.queue-open .player { right: calc(var(--queue-w) + 16px); }
+.transport, .tools { display: flex; align-items: center; gap: 2px; flex: none; }
+.icon-btn {
+  width: 44px; height: 44px; border-radius: 22px;
+  font-size: 18px; color: var(--text2);
+  display: inline-flex; align-items: center; justify-content: center;
+}
+.icon-btn.big { width: 52px; height: 52px; font-size: 24px; color: var(--text); }
+.icon-btn.on { color: var(--accent); }
+.icon-btn:active { background: var(--hover); }
+.icon-btn:disabled { opacity: .35; }
+.badge-one { position: relative; }
+/* 单曲重复：在循环图标正中叠一个小「1」 */
+.badge-one::after {
+  content: "1"; position: absolute; left: 50%; top: 50%; transform: translate(-50%, -52%);
+  font-size: 9px; font-weight: 800; line-height: 1;
+}
+
+.lcd { flex: 1; min-width: 0; display: flex; align-items: center; gap: 10px; }
+/* 播放条封面：外框本身是灰色圆角方块，没有图或图加载失败时就露出这个底色 */
+.lcd-cover { display: block; width: 44px; height: 44px; border-radius: 6px; overflow: hidden; background: var(--row); flex: none; }
+.lcd-cover img { display: block; width: 100%; height: 100%; object-fit: cover; }
+.lcd-cover img[hidden] { display: none; }
+.lcd-text { flex: 1; min-width: 0; }
+.lcd-title { font-size: 14px; font-weight: 600; }
+.lcd-sub { font-size: 12px; color: var(--text2); }
+.lcd-title, .lcd-sub { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.lcd-time { display: flex; align-items: center; gap: 8px; flex: 0 1 260px; font-size: 11px; color: var(--text2); font-variant-numeric: tabular-nums; }
+.bar { flex: 1; height: 24px; display: flex; align-items: center; cursor: pointer; touch-action: none; }
+.bar::before { content: ""; position: absolute; }
+.bar { position: relative; }
+.bar::after { content: ""; position: absolute; left: 0; right: 0; height: 4px; border-radius: 2px; background: var(--line); }
+.bar-fill { position: relative; z-index: 1; height: 4px; border-radius: 2px; background: var(--text2); width: 0; }
+.player.off .lcd { opacity: .45; }
+
+.toast {
+  position: fixed; left: 50%; top: 16px; transform: translateX(-50%); z-index: 20;
+  background: var(--text); color: var(--bg); padding: 8px 16px; border-radius: 18px; font-size: 13px;
+}
+
+/* ---------- 中间「当前播放」列表 ---------- */
+.count { font-size: 13px; font-weight: 400; color: var(--text2); margin-left: 6px; }
+/* 「当前播放」数量：在标题栏水平居中（以「当前播放」这一栏为准，不受左右按钮宽度影响） */
+.topbar { position: relative; }
+.cur-count {
+  position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%);
+  margin: 0; white-space: nowrap; pointer-events: none; font-variant-numeric: tabular-nums;
+}
+.cur-count:empty { display: none; }
+/* 「当前播放 · 设备名」：设备名灰色常规字重；标题最多到中间数量的左侧，过长省略 */
+#main > .topbar > .view-title {
+  flex: 0 1 auto; max-width: calc(50% - 50px); margin-right: auto;   /* margin-right:auto 让右侧按钮仍靠右 */
+  display: flex; align-items: center; min-width: 0;
+}
+.cur-label { flex: none; }
+.cur-sep { flex: none; margin: 0 2px 0 6px; font-weight: 400; color: var(--text3); }
+/* 设备名做成可点的下拉按钮：灰色常规字 + 小箭头，按下/展开时有浅底 */
+.cur-dev {
+  display: inline-flex; align-items: center; gap: 4px; min-width: 0;
+  height: 28px; padding: 0 6px; border: 0; border-radius: 7px; background: none;
+  font: inherit; font-weight: 400; color: var(--text2); cursor: pointer;
+}
+.cur-dev-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cur-dev svg { flex: none; transition: transform .2s ease; }
+.cur-dev:hover, .cur-dev:active, .cur-dev.open { background: var(--hover); color: var(--text); }
+.cur-dev.open svg { transform: rotate(180deg); }
+.cur-dev[hidden], .cur-sep[hidden] { display: none; }
+/* 下拉菜单：挂在标题栏下方，复用播放设备弹窗的列表样式 */
+.dev-menu {
+  position: absolute; top: 46px; z-index: 30;
+  min-width: 250px; max-width: 340px; padding: 6px;
+  background: var(--bar-solid); border: 1px solid var(--line); border-radius: 14px;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, .18);
+}
+.dev-menu[hidden] { display: none; }
+.cur-table .cv { width: 44px; padding: 0 4px; }
+/* 当前播放列表封面：图片自带灰色圆角底色（加载中、加载失败时可见）；无封面时用同尺寸的灰色方块 */
+.cur-table .cv img, .cur-table .cv .ph { display: block; width: 32px; height: 32px; border-radius: 4px; object-fit: cover; background: var(--row); }
+.cur-table tr.past td { color: var(--text3); }
+.cur-table tbody tr { cursor: pointer; touch-action: pan-y; -webkit-touch-callout: none; }
+
+/* 拖动排序：提起的行浮在其他行上方 */
+.cur-table tbody tr.lifted {
+  position: relative; z-index: 5; cursor: grabbing;
+  opacity: 0.6;   /* 提起后半透明，能看到下面让位的行 */
+  filter: drop-shadow(0 6px 14px rgba(0, 0, 0, 0.22));
+}
+.cur-table tbody tr.lifted td { background: var(--bar-solid); }
+.cur-list.reordering, .content.reordering { cursor: grabbing; }
+
+/* ---------- 选曲窗口：从边栏与主区的分界处向右滑出，内部两栏（列表 | 详情） ---------- */
+:root { --picker-w: 520px; }   /* 默认宽度；拖动分隔条后由脚本改写并记住 */
+.sidebar { position: relative; z-index: 16; }   /* 边栏压在窗口上面，窗口看起来是从边栏后面滑出来的 */
+.player { z-index: 17; }                          /* 播放条和设备弹窗始终在最上层 */
+/* 实际宽度：用户拖动的 --picker-w，限制在 340px 到「给当前播放留 300px」之间 */
+:root { --pw: clamp(340px, var(--picker-w), calc(100vw - var(--side-w) - 300px)); }
+.picker {
+  position: fixed; z-index: 15; top: 0; left: var(--side-w);
+  bottom: calc(88px + env(safe-area-inset-bottom, 0px));   /* 底边停在播放条上方 */
+  width: var(--pw);
+  display: flex; flex-direction: column;
+  background: var(--bg); border-right: 1px solid var(--line);
+  padding-top: env(safe-area-inset-top, 0px);
+  animation: slide-in .22s ease-out;
+}
+/* 窗口打开时，「当前播放」整体向右让出窗口宽度，跟着滑入动画一起移动 */
+.main { transition: padding-left .22s ease-out; }
+.app.picker-open .main { padding-left: var(--pw); }
+.app.resizing .main { transition: none; }
+.app.resizing, .app.resizing * { cursor: col-resize !important; user-select: none; -webkit-user-select: none; }
+/* 分隔条：窗口右边缘 16px 宽的拖动区，中间一根小竖条提示可拖 */
+.picker-resize {
+  position: absolute; z-index: 2; top: 0; bottom: 0; right: -8px; width: 16px;
+  cursor: col-resize; touch-action: none;
+}
+.picker-resize::after {
+  content: ""; position: absolute; left: 6px; top: 50%; width: 4px; height: 40px; margin-top: -20px;
+  border-radius: 2px; background: var(--text3); opacity: .35; transition: opacity .15s, background .15s;
+}
+.picker-resize:hover::after, .app.resizing .picker-resize::after { opacity: 1; background: var(--accent); }
+.picker[hidden] { display: none; }
+@keyframes slide-in { from { transform: translateX(-100%); } to { transform: none; } }
+/* 缩回：反向滑回边栏后面 */
+.picker.closing { animation: slide-out .2s ease-in forwards; pointer-events: none; }
+@keyframes slide-out { from { transform: none; } to { transform: translateX(-100%); } }
+@media (prefers-reduced-motion: reduce) { .picker, .picker.closing { animation: none; } }
+.picker-head {
+  display: flex; align-items: center; gap: 8px; height: 52px; padding: 0 6px 0 16px; flex: none;
+  border-bottom: 1px solid var(--line);
+}
+.pick-cat { margin: 0; flex: 1; font-size: 15px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.picker .filter { width: 200px; margin: 0; flex: none; }
+/* 数量：灰色，靠右（顶部在查找框左边，详情标题行在最右） */
+.pick-count { flex: none; color: var(--text2); font-size: 13px; font-weight: 400; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.picker-head .pick-count { margin-right: 6px; }
+.detail-head .pick-count { margin-left: 8px; }
+.pick-count:empty { display: none; }
+.picker-cols { flex: 1; min-height: 0; display: grid; grid-template-columns: 42% 58%; }
+.pick-list {
+  min-height: 0; overflow-y: auto; -webkit-overflow-scrolling: touch;
+  padding: 4px 8px 12px; border-right: 1px solid var(--line);
+}
+.pick-list li.on { background: var(--hover); border-radius: 8px; }
+.pick-detail { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
+.detail-head { display: flex; align-items: center; gap: 4px; height: 44px; padding: 0 12px; flex: none; }
+.detail-head .view-title { font-size: 15px; }
+.picker-body { flex: 1; min-height: 0; overflow-y: auto; -webkit-overflow-scrolling: touch; padding: 0 12px 12px; }
+.pick-detail .empty { color: var(--text2); font-size: 17px; font-weight: 400; padding-top: 30%; }
+/* 没有返回、也没有标题时整行隐藏；.icon-btn 的 inline-flex 会盖掉 hidden，这里补回来 */
+.detail-head[hidden], .detail-head [hidden] { display: none; }
+.pill:disabled { opacity: .35; }
+.pill.ghost { background: var(--row); color: var(--text); min-width: 0; height: 36px; padding: 0 16px; font-weight: 500; }
+/* 一栏模式（专辑、最近添加、歌曲、文件夹、收藏、搜索）：不显示左栏，右栏占满 */
+.picker-cols.one { grid-template-columns: 1fr; }
+.picker-cols.one .pick-list { display: none; }
+.pick-list li[data-k] { cursor: pointer; }
+.picker .grid { grid-template-columns: repeat(2, 1fr); gap: 16px 12px; }
+.picker-cols.one .grid { grid-template-columns: repeat(3, 1fr); }
+.picker .album-head { flex-direction: column; align-items: flex-start; gap: 12px; }
+.picker-cols.one .album-head { flex-direction: row; align-items: flex-end; gap: 16px; }
+.picker .album-head .art { width: 160px; height: 160px; }
+.picker .album-head h2 { font-size: 19px; }
+.picker .album-head .artist { font-size: 15px; }
+.picker .actions { margin: 4px 0 10px; }
+
+/* 行尾「＋」：灰圆 24px（原 44px），点击区仍向外扩 8px，手指好点 */
+.tracks .plus { width: 40px; text-align: center; padding: 0 4px; }
+.add-btn {
+  position: relative; flex: none;
+  width: 24px; height: 24px; border-radius: 50%;
+  display: inline-flex; align-items: center; justify-content: center;
+  background: var(--row); color: var(--text2);
+  transition: background .15s, color .15s;
+}
+.add-btn::after { content: ""; position: absolute; inset: -8px; }
+.add-btn:hover { background: var(--hover); color: var(--text); }
+.add-btn:active { transform: scale(.92); }
+.add-btn.done { background: var(--accent); color: #fff; }
+.add-btn:disabled { opacity: .5; }
+.tracks .ttl .sub { font-size: 11px; color: var(--text2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.picker .tracks td { height: 48px; }
+
+/* ---------- 左下角深浅界面开关：太阳 · 开关 · 月亮 ---------- */
+:root { --bar-solid: #fafafc; }
+:root[data-theme="dark"] { --bar-solid: #2c2c2e; }
+.sidebar-foot { padding: 8px 0 4px; flex-direction: column; gap: 2px; }
+/* 版本号：开关下方一行浅灰小字，不可点 */
+.app-ver {
+  font-size: 11px; line-height: 14px; color: var(--text3);
+  letter-spacing: .02em; font-variant-numeric: tabular-nums;
+  user-select: none; -webkit-user-select: none;
+}
+.theme-switch {
+  display: flex; align-items: center; justify-content: center; gap: 8px;
+  width: 100%; height: 40px; padding: 0; border: 0; background: none;
+  color: var(--text3); cursor: pointer; -webkit-tap-highlight-color: transparent;
+}
+.theme-switch svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; transition: color .2s; }
+.ts-track { position: relative; flex: none; width: 36px; height: 20px; border-radius: 10px; background: var(--hover); transition: background-color .2s; }
+.ts-knob {
+  position: absolute; top: 2px; left: 2px; width: 16px; height: 16px; border-radius: 50%;
+  background: #fff; box-shadow: 0 1px 3px rgba(0, 0, 0, .3); transition: transform .2s ease;
+}
+:root[data-theme="light"] .theme-switch .ts-sun { color: var(--text); }
+:root[data-theme="dark"] .theme-switch .ts-moon { color: var(--text); }
+:root[data-theme="dark"] .ts-track { background: var(--accent); }
+:root[data-theme="dark"] .ts-knob { transform: translateX(16px); }
+.theme-switch:active .ts-knob { width: 20px; }
+:root[data-theme="dark"] .theme-switch:active .ts-knob { transform: translateX(12px); }
+/* 切换瞬间各区块颜色平滑过渡（只在切换后 0.3 秒内生效，平时不影响性能） */
+:root.theme-anim *, :root.theme-anim *::before, :root.theme-anim *::after {
+  transition: background-color .3s, color .3s, border-color .3s !important;
+}
+
+/* ---------- 播放设备弹窗（仿「音乐」AirPlay 列表） ---------- */
+.dev-wrap { position: relative; }
+.devices {
+  position: absolute; right: -10px; bottom: 58px; z-index: 30;
+  width: 300px; padding: 6px;
+  background: var(--bar-solid); border: 1px solid var(--line);
+  border-radius: 18px; box-shadow: var(--shadow);
+}
+.devices[hidden] { display: none; }
+.devices::after {   /* 指向按钮的小三角 */
+  content: ""; position: absolute; right: 22px; bottom: -7px;
+  width: 12px; height: 12px; transform: rotate(45deg);
+  background: var(--bar-solid); border-right: 1px solid var(--line); border-bottom: 1px solid var(--line);
+}
+.device-list { list-style: none; margin: 0; padding: 0; }
+.device-list li { display: flex; align-items: center; gap: 12px; min-height: 48px; padding: 0 10px; border-radius: 12px; cursor: pointer; }
+.device-list li:active { background: var(--hover); }
+.device-list .dev-ico { width: 24px; color: var(--text2); display: flex; justify-content: center; flex: none; }
+.device-list .dev-name { flex: 1; min-width: 0; font-size: 15px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.device-list .dev-name small { margin-left: 6px; font-size: 12px; color: var(--text3); }
+.device-list .dev-chk { width: 22px; height: 22px; border-radius: 6px; background: var(--row); border: 1px solid var(--line); flex: none; }
+.device-list li.cur .dev-chk { background: var(--hover); position: relative; }
+.device-list li.cur .dev-chk::after { content: "✓"; position: absolute; inset: 0; text-align: center; line-height: 20px; font-size: 14px; color: var(--text2); }
+.device-list li.offline { opacity: .45; cursor: default; }
+.device-list .dev-empty { color: var(--text2); font-size: 13px; justify-content: center; cursor: default; }
+
+/* ---------- 播放条右侧 3 个图标（信息、AirPlay、喇叭）排得更紧 ---------- */
+.tools { gap: 0; }
+.tools .icon-btn { width: 36px; border-radius: 10px; }
+
+/* ---------- 静音按钮 ---------- */
+.mute-btn .ico-off { display: none; }
+.mute-btn.muted .ico-on { display: none; }
+.mute-btn.muted .ico-off { display: block; }
+.mute-btn.muted { color: var(--danger); }
+/* 固定音量输出的设备无法静音：灰色、不可点 */
+.mute-btn:disabled { color: var(--text3); opacity: 1; cursor: default; pointer-events: none; }
+
+/* iPad 9（1080×810）及更窄：边栏收窄 */
+@media (max-width: 1100px) {
+  :root { --side-w: 150px; --queue-w: 240px; }
+  .lcd-time { flex-basis: 200px; }
+}
+
+/* 专辑目录：曲目表下面若还有子目录（如 CD1、Scans），隔开一点 */
+.album-extra { margin-top: 16px; }
+
+/* 喜爱：曲目行「＋」前面的心形。空心灰 = 未喜爱，实心红 = 已喜爱 */
+.tracks .fav { width: 32px; text-align: center; padding: 0; }
+.fav-btn {
+  position: relative; width: 28px; height: 28px; flex: none;
+  display: inline-flex; align-items: center; justify-content: center;
+  background: none; border: 0; padding: 0; color: var(--text3); cursor: pointer;
+  vertical-align: middle;
+}
+.fav-btn svg { width: 17px; height: 17px; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linejoin: round; }
+.fav-btn::after { content: ""; position: absolute; inset: -6px; }
+.fav-btn:hover { color: var(--text2); }
+.fav-btn:active { transform: scale(.88); }
+.fav-btn.on { color: #fa2d48; }
+.fav-btn.on svg { fill: currentColor; }
+.fav-btn:disabled { opacity: .5; }
+.list li .fav-btn { margin-right: 2px; }
+
+/* 向左滑动删除：行内容左移，右侧露出红底垃圾篓；滑够距离（变深红）松手即删除 */
+.content, .cur-list { overflow-x: hidden; }
+.cur-table tbody tr.swiping { background: #ff3b30 url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='white' stroke-width='1.9' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M4 6.5h16M9.5 6.5V4.5h5v2M6.5 6.5l1 13.5h9l1-13.5M10 10.5v6M14 10.5v6'/%3E%3C/svg%3E") no-repeat right 22px center / 22px 22px; }
+.cur-table tbody tr.swiping > td { background: var(--bg); transform: translateX(var(--sx, 0px)); transition: transform .2s ease; }
+.cur-table tbody tr.sw-move > td { transition: none; }
+.cur-table tbody tr.swipe-arm { background-color: #d70015; }
+.list li[data-swipe] { position: relative; touch-action: pan-y; }
+.list li.swiping { background: var(--bg); transform: translateX(var(--sx, 0px)); transition: transform .2s ease; }
+.list li.sw-move { transition: none; }
+.list li.swiping::after {
+  content: ""; position: absolute; top: 0; bottom: 0; left: 100%; width: 100vw;
+  background: #ff3b30 url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='white' stroke-width='1.9' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M4 6.5h16M9.5 6.5V4.5h5v2M6.5 6.5l1 13.5h9l1-13.5M10 10.5v6M14 10.5v6'/%3E%3C/svg%3E") no-repeat left 22px center / 22px 22px;
+}
+.list li.swipe-arm::after { background-color: #d70015; }
+/* 滑动时保留偶数行的底色 */
+.cur-table tbody tr.swiping:nth-child(even) > td { background: var(--row); }
+/* 拉够松手：停在原位整体淡出（连同红底），不再整行滑出露出整条红色 */
+.cur-table tbody tr.sw-del { opacity: 0; transition: opacity .18s ease; }
+.list li.sw-del { opacity: 0; transition: transform .2s ease, opacity .18s ease; }

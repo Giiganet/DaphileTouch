@@ -1,0 +1,16 @@
+<?xml version='1.0' standalone='yes'?>
+<extensions>
+  <targetApplication>
+    <id>SlimServer</id>
+    <minVersion>8.0</minVersion>
+    <maxVersion>*</maxVersion>
+  </targetApplication>
+  <name>PLUGIN_DAPHILETOUCH</name>
+  <description>PLUGIN_DAPHILETOUCH_DESC</description>
+  <module>Plugins::DaphileTouch::Plugin</module>
+  <version>0.1.0</version>
+  <creator>giiganet</creator>
+  <homepageURL>https://github.com/giiganet/DaphileTouch</homepageURL>
+  <defaultState>enabled</defaultState>
+  <category>skin</category>
+</extensions>
