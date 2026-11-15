@@ -15,7 +15,7 @@ from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 PREFIX = "/lms/"
 WEB_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), os.pardir, "web")
 PASS_HEADERS = ("Content-Type", "Content-Length", "Cache-Control", "ETag",
-                "Last-Modified", "Expires")
+                "Last-Modified", "Expires", "Content-Range", "Accept-Ranges")
 
 
 class Handler(SimpleHTTPRequestHandler):
@@ -43,8 +43,9 @@ class Handler(SimpleHTTPRequestHandler):
         length = int(self.headers.get("Content-Length") or 0)
         body = self.rfile.read(length) if length else None
         headers = {}
-        if self.headers.get("Content-Type"):
-            headers["Content-Type"] = self.headers["Content-Type"]
+        for name in ("Content-Type", "Range"):    # Range：节奏灯分段读音频文件
+            if self.headers.get(name):
+                headers[name] = self.headers[name]
         conn = http.client.HTTPConnection(self.lms_host, self.lms_port, timeout=10)
         try:
             conn.request(method, target, body=body, headers=headers)

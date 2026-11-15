@@ -234,6 +234,14 @@ img { display: block; }
 .bar { position: relative; }
 .bar::after { content: ""; position: absolute; left: 0; right: 0; height: 4px; border-radius: 2px; background: var(--line); }
 .bar-fill { position: relative; z-index: 1; height: 4px; border-radius: 2px; background: var(--text2); width: 0; }
+/* 节奏灯（频谱）：「时间 + 进度条 + 剩余时间」整组为一格，点一下整组换成频谱，再点换回 */
+.lcd-time { position: relative; cursor: pointer; }
+.vu { display: none; position: absolute; left: 0; top: -6px; width: 100%; height: calc(100% + 12px); pointer-events: none; }
+.vu-na { display: none; position: absolute; inset: 0; align-items: center; justify-content: center; color: var(--text3); font-size: 12px; pointer-events: none; }
+.lcd-time.vu-on > span, .lcd-time.vu-on > .bar { visibility: hidden; }
+.lcd-time.vu-on .vu { display: block; }
+.lcd-time.vu-on.na .vu { display: none; }
+.lcd-time.vu-on.na .vu-na { display: flex; visibility: visible; }
 .player.off .lcd { opacity: .45; }
 
 .toast {

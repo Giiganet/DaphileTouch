@@ -18,7 +18,7 @@ import zipfile
 ROOT = os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), os.pardir))
 NAME = "DaphileTouch"
 REPO = "https://github.com/giiganet/DaphileTouch"
-WEB_FILES = ("index.html", "style.css", "api.js", "views.js", "app.js")
+WEB_FILES = ("index.html", "style.css", "api.js", "views.js", "rhythm.js", "app.js")
 PLUGIN_FILES = ("install.xml", "Plugin.pm", "strings.txt")
 VER_RE = r"\d+\.\d+\.\d+"
 

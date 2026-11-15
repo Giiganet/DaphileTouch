@@ -41,9 +41,13 @@ const LMS = (() => {
     return pick;
   }
 
+  /* 曲目原始音频文件地址（支持 Range 分段读取，节奏灯用） */
+  const audio = (id) => `${BASE}/music/${encodeURIComponent(id)}/download`;
+
   return {
     findPlayer,
     cover,
+    audio,
     get playerId() { return playerId; },
     /* 网络上所有 LMS 播放器（name、playerid、connected、power、model） */
     players: async () => visible((await q(["players", 0, 50])).players_loop),
@@ -70,6 +74,34 @@ const LMS = (() => {
     deleteAt: (idx) => p(["playlist", "delete", String(idx)]),
     /* 把队列里第 from 首移到第 to 位（从 0 开始），LMS 会自动修正正在播放的位置 */
     move: (from, to) => p(["playlist", "move", String(from), String(to)]),
+    /* AirPlay 转移：把 from 的整个队列、当前曲目和进度搬到 to 上接着放，from 暂停。
+       to 原来的队列会被替换。返回转过去的曲目数。 */
+    transfer: async (from, to) => {
+      const st = await rpc(from, ["status", 0, 1000, "tags:u"]);
+      const readAt = Date.now();
+      const loop = st.playlist_loop || [];
+      if (!loop.length) throw new Error("当前播放列表是空的");
+      const idx = Number(st.playlist_cur_index) || 0;
+      const playing = st.mode === "play";
+      const run = (cmd) => rpc(to, cmd);
+      await run(["power", "1"]);
+      await run(["playlist", "clear"]);
+      // 按原顺序加入：本地曲目成批按 track_id 加，网络电台等（id 为负）按地址加
+      let ids = [];
+      const flush = async () => { if (ids.length) { await run(["playlistcontrol", "cmd:add", "track_id:" + ids.join(",")]); ids = []; } };
+      for (const x of loop) {
+        if (Number(x.id) > 0) ids.push(x.id);
+        else if (x.url) { await flush(); await run(["playlist", "add", x.url]); }
+      }
+      await flush();
+      await run(["playlist", "repeat", String(st["playlist repeat"] || 0)]);
+      if (playing) await rpc(from, ["pause", "1"]);          // 先停原设备，避免两边同时出声
+      await run(["playlist", "index", String(idx)]);
+      const t = Number(st.time || 0) + (playing ? (Date.now() - readAt) / 1000 : 0);
+      if (t > 1 && Number(st.can_seek)) await run(["time", String(t)]);
+      if (!playing) await run(["pause", "1"]);               // 原来是暂停的，转过去也停在同一位置
+      return loop.length;
+    },
     /* 把当前播放队列存成播放列表（LMS 写到 playlistdir 下的 <名称>.m3u；同名会覆盖） */
     savePlaylist: (name) => p(["playlist", "save", name]),
 
@@ -105,6 +137,8 @@ const LMS = (() => {
     favExists: (trackId) => q(["favorites", "exists", String(trackId)]),
     favAdd: (url, title) => q(["favorites", "add", "url:" + url, "title:" + title, "type:audio"]),
     favDelete: (index) => q(["favorites", "delete", "item_id:" + index]),
+    /* 节奏灯用：文件路径（CUE 分轨带 #起-止）、格式、大小、码率、时长 */
+    fileInfo: async (trackId) => ({ id: trackId, ...(((await q(["titles", 0, 1, "track_id:" + trackId, "tags:uofrdT"])).titles_loop || [])[0] || {}) }),
     trackUrl: async (trackId) => ((await q(["titles", 0, 1, "track_id:" + trackId, "tags:u"])).titles_loop || [])[0] || {},
     search: (term) => q(["search", 0, 30, "term:" + term]),
   };

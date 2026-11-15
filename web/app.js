@@ -53,7 +53,7 @@ function render() {
   const devName = st.player_name || "";
   if ($("cur-dev-name").textContent !== devName) {
     $("cur-dev-name").textContent = devName;
-    $("cur-dev").title = devName ? "播放设备：" + devName + "（点按切换）" : "";
+    $("cur-dev").title = devName ? "当前播放设备：" + devName + "（点按换到另一台设备，连同它自己的播放列表）" : "";
     $("cur-dev").hidden = $("cur-sep").hidden = !devName;
   }
 
@@ -71,6 +71,7 @@ function render() {
     $("lcd-cover").hidden = true;
   }
   renderTime();
+  if (typeof Rhythm !== "undefined") Rhythm.setTrack(cur ? cur.id : null);
   renderNowPlaying(cur);
   renderQueue(loop, curIdx);
   if (typeof Views !== "undefined") Views.markPlaying(cur);
@@ -87,6 +88,14 @@ function renderTime() {
   $("t-cur").textContent = fmtTime(t);
   $("t-left").textContent = dur ? "-" + fmtTime(dur - t) : "";
   $("bar-fill").style.width = dur ? (t / dur) * 100 + "%" : "0";
+}
+
+/* 节奏灯对时：经 RaopBridge 的 AirPlay 设备出声约晚 2 秒，本机 D10s 约 0.1 秒 */
+async function syncRhythmDelay() {
+  try {
+    const p = (await LMS.players()).find((x) => x.playerid === LMS.playerId);
+    Rhythm.setDelay(p && /raop/i.test(p.modelname || "") ? 2.0 : 0.1);
+  } catch (_) { /* 拿不到就沿用上次 */ }
 }
 
 /* ---------- 封面兜底 ----------
@@ -441,15 +450,31 @@ function bindPlayer() {
       }).join("") : `<li class="dev-empty">没有找到播放设备</li>`;
     } catch (err) { ul.innerHTML = `<li class="dev-empty">查找失败：${esc(err.message)}</li>`; }
   }
-  /* 切换到列表里点中的设备 */
-  function switchPlayer(li) {
+  const devName = (li) => li.querySelector(".dev-name").firstChild.textContent.trim();
+  /* 「当前播放」旁的下拉菜单：换成控制另一台设备（各设备的队列互不影响） */
+  function switchPlayer(li, msg = "已切换到 ") {
     const pid = li.dataset.pid;
     if (pid === LMS.playerId) return;
     LMS.setPlayer(pid);
     try { localStorage.setItem("daphile.player", pid); } catch (err) { /* 忽略 */ }
     S.queueKey = ""; S.npKey = null;
-    toast("已切换到 " + li.querySelector(".dev-name").firstChild.textContent.trim());
+    toast(msg + devName(li));
     poll();
+    syncRhythmDelay();
+  }
+  /* 播放条上的 AirPlay：把正在放的声音转到另一台设备（队列、当前曲目、进度一起带过去），
+     原设备暂停，网页随后控制新设备 */
+  async function transferTo(li) {
+    const pid = li.dataset.pid;
+    if (pid === LMS.playerId || transferTo.busy) return;
+    transferTo.busy = true;
+    toast("正在转到 " + devName(li) + "…");
+    try {
+      await LMS.transfer(LMS.playerId, pid);
+      switchPlayer(li, "已转到 ");
+    } catch (err) {
+      toast(err.message === "当前播放列表是空的" ? "当前没有正在播放的内容，无需转移" : "转移失败：" + err.message);
+    } finally { transferTo.busy = false; }
   }
   const pickedDevice = (e) => {
     const li = e.target.closest("li[data-pid]");
@@ -473,7 +498,7 @@ function bindPlayer() {
   };
   $("device-list").onclick = (e) => {
     const li = pickedDevice(e); if (!li) return;
-    closeDevices(); switchPlayer(li);
+    closeDevices(); transferTo(li);
   };
   devBtn.onclick = (e) => {
     e.stopPropagation();
@@ -496,27 +521,33 @@ function bindPlayer() {
   });
   document.addEventListener("keydown", (e) => { if (e.key === "Escape") { closeDevMenu(); closeDevices(); } });
 
-  /* 进度条：按下拖动，松手跳转 */
-  const bar = $("bar");
+  /* 「时间 + 进度条 + 剩余时间」整组与频谱共用一格：点一下整组切换；进度条模式下在进度条上按住左右拖动才是跳转 */
+  const bar = $("bar"), box = $("lcd-time");
   const ratio = (e) => {
     const r = bar.getBoundingClientRect();
     return Math.min(1, Math.max(0, (e.clientX - r.left) / r.width));
   };
-  bar.addEventListener("pointerdown", (e) => {
+  box.addEventListener("pointerdown", (e) => {
+    const x0 = e.clientX, vu = Rhythm.on;
     const dur = Number(S.st?.duration || 0);
-    if (!dur || !Number(S.st?.can_seek)) return;
-    S.seeking = true;
-    bar.setPointerCapture(e.pointerId);
+    const canSeek = !vu && e.target.closest("#bar") && dur && Number(S.st?.can_seek);
+    let dragging = false;
+    box.setPointerCapture(e.pointerId);
     const show = (ev) => {
       const t = ratio(ev) * dur;
       $("bar-fill").style.width = ratio(ev) * 100 + "%";
       $("t-cur").textContent = fmtTime(t);
       $("t-left").textContent = "-" + fmtTime(dur - t);
     };
-    show(e);
-    bar.onpointermove = show;
-    bar.onpointerup = (ev) => {
-      bar.onpointermove = bar.onpointerup = null;
+    box.onpointermove = (ev) => {
+      if (!canSeek) return;
+      if (!dragging && Math.abs(ev.clientX - x0) < 6) return;   // 6px 以内算点按，不算拖动
+      dragging = S.seeking = true;
+      show(ev);
+    };
+    box.onpointerup = box.onpointercancel = (ev) => {
+      box.onpointermove = box.onpointerup = box.onpointercancel = null;
+      if (!dragging) { if (ev.type === "pointerup") Rhythm.setOn(!vu); return; }
       const t = ratio(ev) * dur;
       S.st.time = t; S.polledAt = Date.now();
       S.seeking = false;
@@ -528,8 +559,7 @@ function bindPlayer() {
 async function start() {
   if (!start.bound) { bindPlayer(); start.bound = true; }   // 连接失败重试时不重复绑定事件
   try {
-    const pl = await LMS.findPlayer();
-    $("btn-devices").title = pl.name;
+    await LMS.findPlayer();
   } catch (e) {
     toast("连接 Daphile 失败：" + e.message);
     setTimeout(start, 5000);
@@ -537,6 +567,13 @@ async function start() {
   }
   poll();
   setInterval(renderTime, 500);
+  Rhythm.attach($("vu"), () => {
+    const st = S.st;
+    if (!st || !S.cur || S.seeking) return null;
+    const playing = st.mode === "play";
+    return { pos: Number(st.time || 0) + (playing ? (Date.now() - S.polledAt) / 1000 : 0), playing };
+  });
+  syncRhythmDelay();
   document.addEventListener("visibilitychange", () => { if (!document.hidden) poll(); });
   if (typeof Views !== "undefined") Views.init();
 }

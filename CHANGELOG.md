@@ -3,6 +3,15 @@
 All notable changes to this project are documented here.
 Versions follow [Semantic Versioning](https://semver.org/).
 
+## [0.3.0] - 2026-11-15
+
+### Added
+- Spectrum display: tap the elapsed time / progress bar / remaining time group in the player bar to replace all three with a spectrum of the playing track; tap again to switch back (the choice is remembered). Dragging on the progress bar still seeks. Left and right channels are combined into one display (lit if either channel has sound, dark when both are silent or playback is paused). The page reads short sections of the track file around the play position via HTTP Range (about 8 s at a time) and analyses them in the browser (FFT, 40 log-spaced bands, 50 Hz–16 kHz, LED-ladder style). Works with FLAC, WAV and MP3, including CUE sheet tracks; ALAC, AAC, APE and DSD show “不可用” (unavailable). Delay compensation: 2.0 s for AirPlay (RaopBridge) players, 0.1 s otherwise.
+
+### Changed
+- The AirPlay button now moves what is playing to another device: the whole queue, current track and position are copied to the chosen player (its own queue is replaced), the previous player pauses, and the page switches to the new player. Repeat mode is carried over; shuffle is not (tracks keep the order being played).
+- The Now Playing title reads “当前播放设备 · device ▾”. Choosing a device there switches to that player together with its own queue, without moving any playback.
+
 ## [0.2.0] - 2026-11-15
 
 ### Changed
