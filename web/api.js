@@ -3,8 +3,8 @@
    开发时经 tools/dev-server.py 打开，请求走 /lms/ 反向代理。 */
 const LMS = (() => {
   const BASE = location.pathname.startsWith("/plugins/") ? "" : "/lms";
-  // A：按角色返回 composer/conductor/band/albumartist 等；g：流派
-  const STATUS_TAGS = "tags:aAcdglKNoxrTIjJQyt";
+  // A：按角色返回 composer/conductor/band/albumartist 等；g：流派；f：文件大小（信息面板用）
+  const STATUS_TAGS = "tags:aAcdfglKNoxrTIjJQyt";
   let playerId = null;
 
   async function rpc(player, cmd) {

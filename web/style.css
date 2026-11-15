@@ -194,7 +194,10 @@ img { display: block; }
 .np-art-empty { display: flex; align-items: center; justify-content: center; font-size: 64px; color: var(--text3); }
 .np-title { margin-top: 14px; font-size: 17px; font-weight: 700; line-height: 1.3; word-break: break-word; }
 .np-artist { margin-top: 2px; font-size: 14px; color: var(--accent); }
-.np-meta { display: grid; grid-template-columns: auto 1fr; gap: 6px 12px; margin: 14px 0 10px; font-size: 13px; }
+.np-meta { display: flex; flex-direction: column; gap: 4px; margin: 14px 0 10px; font-size: 13px; }
+.np-row { display: grid; grid-template-columns: 4.5em 1fr; gap: 10px; padding: 3px 10px; }
+.np-row.fmt { padding: 7px 10px; border-radius: 8px; background: var(--row); }
+.np-row:not(.fmt) + .np-row.fmt { margin-top: 8px; }   /* 格式块与上面的曲目信息隔开一点 */
 .np-meta dt { color: var(--text2); white-space: nowrap; }
 .np-meta dd { margin: 0; min-width: 0; word-break: break-word; }
 
