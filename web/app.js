@@ -226,10 +226,52 @@ async function poll() {
     render();
   } catch (e) {
     S.fails++;
-    if (S.fails === 3) { toast("与 Daphile 失去连接，正在重试…"); }
+    if (S.fails === 3 && !Upd.since) { toast("与 Daphile 失去连接，正在重试…"); }   // 重启 LMS 期间不提示
   }
   // 页面在后台时降低频率
   poll._t = setTimeout(poll, document.hidden ? 5000 : 1000);
+}
+
+/* ---------- 插件更新提示（侧栏左下，主题开关上方） ----------
+   LMS 下载好插件更新后，serverstatus 返回 needsrestart:1，newplugins 末尾括号里是插件名；要重启 LMS 才会装上。
+   每分钟查一次；点提示框确认后发 restartserver，等 LMS 重新上线、不再需要重启时刷新页面，载入新版。 */
+const Upd = { since: 0, t: 0 };
+async function checkUpdate() {
+  clearTimeout(Upd.t);
+  let r = null;
+  try { r = await LMS.serverStatus(); } catch (_) { /* 连不上：下次再查 */ }
+  const box = $("upd-box");
+  if (Upd.since) {
+    const waited = Date.now() - Upd.since;
+    if (r && !Number(r.needsrestart) && waited > 5000) return location.reload();
+    if (waited > 180000) {
+      Upd.since = 0;
+      box.classList.remove("busy");
+      $("upd-title").textContent = "插件更新已就绪";
+      $("upd-sub").textContent = "点此重启 LMS 安装";
+      toast("LMS 没有按时重启完成，请到 Daphile 设置页查看");
+    } else { Upd.t = setTimeout(checkUpdate, 3000); return; }
+  }
+  const ready = !!r && Number(r.needsrestart) === 1 && !Number(r.pluginsdownloading);
+  if (ready) {
+    const m = /\(([^()]*)\)\s*$/.exec(r.newplugins || "");
+    $("upd-sub").textContent = (m ? m[1] + " · " : "") + "点此重启 LMS 安装";
+  }
+  box.hidden = !ready;
+  Upd.t = setTimeout(checkUpdate, document.hidden ? 300000 : 60000);
+}
+function bindUpdate() {
+  $("upd-box").onclick = async () => {
+    if (Upd.since) return;
+    const playing = S.st && S.st.mode === "play";
+    if (!confirm(`重启 LMS 安装插件更新？${playing ? "\n正在播放的音乐会中断。" : ""}\n重启约需一分钟，完成后页面自动刷新。`)) return;
+    Upd.since = Date.now();
+    $("upd-box").classList.add("busy");
+    $("upd-title").textContent = "正在重启 LMS…";
+    $("upd-sub").textContent = "完成后页面会自动刷新";
+    try { await LMS.restartServer(); } catch (_) { /* 重启时连接常被直接断开，属正常 */ }
+    Upd.t = setTimeout(checkUpdate, 5000);
+  };
 }
 
 /* 「当前播放」拖动排序：按住 0.3 秒提起整行，上下拖动，松手后用 playlist move 写回 LMS。
@@ -657,7 +699,7 @@ function bindPlayer() {
 }
 
 async function start() {
-  if (!start.bound) { bindPlayer(); start.bound = true; }   // 连接失败重试时不重复绑定事件
+  if (!start.bound) { bindPlayer(); bindUpdate(); start.bound = true; }   // 连接失败重试时不重复绑定事件
   try {
     await LMS.findPlayer();
   } catch (e) {
@@ -666,6 +708,7 @@ async function start() {
     return;
   }
   poll();
+  checkUpdate();
   setInterval(renderTime, 500);
   Rhythm.attach($("vu"), () => {
     const st = S.st;

@@ -433,6 +433,23 @@ img { display: block; }
 :root { --bar-solid: #fafafc; }
 :root[data-theme="dark"] { --bar-solid: #2c2c2e; }
 .sidebar-foot { padding: 8px 0 4px; flex-direction: column; gap: 2px; }
+/* 插件更新提示：主题开关上方的小卡片，整块可点；重启中变灰、转圈 */
+.upd-box {
+  display: flex; align-items: center; gap: 8px; width: 100%; margin: 0 0 6px; padding: 8px 10px;
+  border: 0; border-radius: 10px; background: color-mix(in srgb, var(--accent) 14%, transparent);
+  color: var(--text); font: inherit; text-align: left; cursor: pointer; -webkit-tap-highlight-color: transparent;
+  animation: upd-in .3s ease;
+}
+.upd-box[hidden] { display: none; }
+.upd-box:active { opacity: .6; }
+.upd-ico { width: 20px; height: 20px; flex: none; fill: none; stroke: var(--accent); stroke-width: 1.9; stroke-linecap: round; stroke-linejoin: round; }
+.upd-txt { display: flex; flex-direction: column; min-width: 0; }
+.upd-title { font-size: 12px; font-weight: 600; line-height: 1.3; }
+.upd-sub { font-size: 11px; line-height: 1.3; color: var(--text2); word-break: break-word; }
+.upd-box.busy { cursor: default; background: var(--hover); }
+.upd-box.busy .upd-ico { animation: upd-spin 1s linear infinite; }
+@keyframes upd-in { from { opacity: 0; transform: translateY(6px); } }
+@keyframes upd-spin { to { transform: rotate(360deg); } }
 /* 版本号：开关下方一行浅灰小字，不可点 */
 .app-ver {
   font-size: 11px; line-height: 14px; color: var(--text3);

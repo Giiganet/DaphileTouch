@@ -134,6 +134,9 @@ const LMS = (() => {
     artists: (start, n, extra = []) => q(["artists", start, n, ...extra]),
     folder: (folderId) => q(["musicfolder", 0, 500, "tags:dcuj", ...(folderId ? ["folder_id:" + folderId] : [])]),
     // 只看目录里的第一项：是曲目就说明这是专辑目录，coverid 即目录封面（LMS 扫描时已把 cover 文件关联到曲目）
+    // 服务器状态：needsrestart / newplugins / pluginsdownloading 用来判断插件更新是否已下载、等重启安装
+    serverStatus: () => q(["serverstatus", 0, 0]),
+    restartServer: () => q(["restartserver"]),
     folderPeek: (folderId) => q(["musicfolder", 0, 1, "tags:cj", "folder_id:" + folderId]),
     // 按目录路径查这个文件夹本身（return_top 返回它的 id 和名称）
     folderByUrl: (url) => q(["musicfolder", 0, 1, "tags:u", "url:" + url, "return_top:1"]),

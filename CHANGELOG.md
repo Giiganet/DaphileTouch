@@ -3,6 +3,11 @@
 All notable changes to this project are documented here.
 Versions follow [Semantic Versioning](https://semver.org/).
 
+## [0.3.6] - 2026-11-15
+
+### Added
+- Plugin update card above the theme switch: when LMS reports that a plugin update has been downloaded and needs a restart (`serverstatus` needsrestart, plugin name from newplugins), a card shows the plugin name. Tapping it asks for confirmation (warning that music will stop if playing) and sends `restartserver`; the page then waits for LMS to come back without needing a restart and reloads itself. Checked every minute (every 5 minutes in the background); the "connection lost" message is suppressed during the restart, and the card returns after 3 minutes if LMS has not come back.
+
 ## [0.3.5] - 2026-11-15
 
 ### Added
