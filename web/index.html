@@ -11,7 +11,7 @@
 <script>/* 先定深浅色再画页面，避免闪一下 */
 (function () { var t = null; try { t = localStorage.getItem("daphile.theme"); } catch (e) {}
   document.documentElement.dataset.theme = t || (matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light"); })();</script>
-<link rel="stylesheet" href="style.css?v=0.1.1">
+<link rel="stylesheet" href="style.css?v=0.1.2">
 </head>
 <body>
 <div class="app" id="app">
@@ -35,7 +35,7 @@
         <span class="ts-track" aria-hidden="true"><span class="ts-knob"></span></span>
         <svg class="ts-moon" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 14.6A8.2 8.2 0 0 1 9.4 4a8.2 8.2 0 1 0 10.6 10.6z"/></svg>
       </button>
-      <div class="app-ver" id="app-ver" aria-label="版本">v0.1.1</div>
+      <div class="app-ver" id="app-ver" aria-label="版本">v0.1.2</div>
     </div>
   </nav>
 
@@ -184,8 +184,8 @@
 </div>
 
 <div class="toast" id="toast" hidden></div>
-<script src="api.js?v=0.1.1"></script>
-<script src="views.js?v=0.1.1"></script>
-<script src="app.js?v=0.1.1"></script>
+<script src="api.js?v=0.1.2"></script>
+<script src="views.js?v=0.1.2"></script>
+<script src="app.js?v=0.1.2"></script>
 </body>
 </html>

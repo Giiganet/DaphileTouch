@@ -3,6 +3,16 @@
 All notable changes to this project are documented here.
 Versions follow [Semantic Versioning](https://semver.org/).
 
+## [0.1.2] - 2026-11-15
+
+### Changed
+- The library browser now has a slightly darker background than Now Playing, so the two areas are easier to tell apart (light and dark themes).
+- Swipe the library browser to the left to close it (past a quarter of its width, or a quick flick). Swiping a Favorites row still removes it from Favorites.
+
+### Fixed
+- Swipe-to-remove in the library browser no longer makes the list jump sideways.
+- Swipe-to-remove in Now Playing no longer shows a thin red outline around the row on iPad.
+
 ## [0.1.1] - 2026-11-15
 
 ### Fixed

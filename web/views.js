@@ -505,11 +505,14 @@ const Views = (() => {
     const p = document.getElementById("picker");
     return !p.hidden && !p.classList.contains("closing");
   };
-  function showPicker(on) {
+  /* swiped：手指向左滑动关闭，窗口从松手的位置接着滑出，不再从头播放缩回动画 */
+  function showPicker(on, swiped) {
     const p = document.getElementById("picker");
     const app = document.getElementById("app");
+    const clearDrag = () => { p.style.transform = p.style.transition = ""; };
     if (on) {
       closeTok++;
+      clearDrag();
       p.classList.remove("closing");
       p.hidden = false;
       app.classList.add("picker-open");
@@ -522,8 +525,14 @@ const Views = (() => {
     current = null;
     document.querySelectorAll(".nav-item").forEach((b) => b.classList.remove("active"));
     const tok = ++closeTok;
-    const done = () => { if (tok !== closeTok) return; p.classList.remove("closing"); p.hidden = true; };
+    const done = () => { if (tok !== closeTok) return; p.classList.remove("closing"); p.hidden = true; clearDrag(); };
     if (matchMedia("(prefers-reduced-motion: reduce)").matches) return done();
+    if (swiped) {
+      p.style.transition = "transform .18s ease-in";
+      p.style.transform = "translateX(-100%)";
+      setTimeout(done, 200);
+      return;
+    }
     p.classList.add("closing");
     p.addEventListener("animationend", (e) => { if (e.target === p) done(); }, { once: true });
     setTimeout(done, 400);   // 兜底：动画事件没触发也能收起
@@ -581,8 +590,52 @@ const Views = (() => {
     });
   }
 
+  /* ---------- 向左滑动关闭选曲窗口：窗口跟着手指左移，拉过窗口宽度 1/4（或快速一甩）松手即关闭，不够就弹回 ----------
+     喜爱页的行（左滑是移出喜爱）、分隔条、输入框上不接管；竖向移动留给列表滚动 */
+  function bindSwipeClose() {
+    const p = document.getElementById("picker");
+    const START = 12;
+    let g = null;
+    p.addEventListener("pointerdown", (e) => {
+      g = null;
+      if (e.button > 0 || !pickerOpen()) return;
+      if (e.target.closest("[data-swipe], #picker-resize, input, textarea, select")) return;
+      g = { x: e.clientX, y: e.clientY, id: e.pointerId, on: false, dx: 0, t: 0, v: 0 };
+    });
+    p.addEventListener("pointermove", (e) => {
+      if (!g || e.pointerId !== g.id) return;
+      const dx = e.clientX - g.x, dy = e.clientY - g.y;
+      if (!g.on) {
+        if (Math.abs(dy) > START) { g = null; return; }            // 竖向：是滚动
+        if (dx > -START || -dx < Math.abs(dy) * 1.5) return;        // 还没确定是向左横滑
+        g.on = true;
+        try { p.setPointerCapture(g.id); } catch (_) { /* 忽略 */ }
+        p.style.transition = "none";
+      }
+      e.preventDefault();
+      const x = Math.min(0, dx + START);                           // 扣掉起步的 12px，窗口不会突然一跳
+      if (g.t) g.v = (x - g.dx) / Math.max(8, e.timeStamp - g.t);  // 速度 px/ms，负数是向左
+      g.dx = x; g.t = e.timeStamp;
+      p.style.transform = `translateX(${x}px)`;
+    });
+    const end = (ok) => (e) => {
+      if (!g || e.pointerId !== g.id) return;
+      const { on, dx, v } = g;
+      g = null;
+      if (!on) return;
+      swallowClick(p);                                             // 松手的 click 不当成点按
+      if (ok && (-dx > p.offsetWidth / 4 || (v < -0.6 && -dx > 30))) return showPicker(false, true);
+      p.style.transition = "transform .2s ease";                   // 不够：弹回原位
+      p.style.transform = "";
+      setTimeout(() => { if (!p.style.transform) p.style.transition = ""; }, 220);
+    };
+    p.addEventListener("pointerup", end(true));
+    p.addEventListener("pointercancel", end(false));
+  }
+
   function init() {
     bindResize();
+    bindSwipeClose();
     // 喜爱页：向左滑动一行即移出喜爱。删后 LMS 会重新编号，所以整页重读
     bindSwipe(content(), "li[data-swipe]", (li) => act(async () => {
       await LMS.favDelete(li.dataset.swipe);

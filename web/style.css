@@ -316,6 +316,13 @@ img { display: block; }
 }
 .picker-resize:hover::after, .app.resizing .picker-resize::after { opacity: 1; background: var(--accent); }
 .picker[hidden] { display: none; }
+/* 选曲窗口底色比「当前播放」深一级；窗口里的隔行底色、灰底按钮、点按高亮也跟着加深一级，保持层次 */
+.picker { --bg: #f8f8fa; --row: #eeeef1; --hover: #e0e0e5; }
+:root[data-theme="dark"] .picker { --bg: #19191a; --row: #242426; --hover: #343437; }
+/* 窗口内只允许竖向滚动：横向手势留给「向左滑动关闭」和喜爱页的滑动删除；
+   横向溢出裁掉，滑动删除时露出的红底不会把列表撑宽（之前会撑出横向滚动，画面闪跳） */
+.picker { touch-action: pan-y; }
+.picker-body, .pick-list { overflow-x: hidden; touch-action: pan-y; }
 @keyframes slide-in { from { transform: translateX(-100%); } to { transform: none; } }
 /* 缩回：反向滑回边栏后面 */
 .picker.closing { animation: slide-out .2s ease-in forwards; pointer-events: none; }
@@ -474,20 +481,22 @@ img { display: block; }
 
 /* 向左滑动删除：行内容左移，右侧露出红底垃圾篓；滑够距离（变深红）松手即删除 */
 .content, .cur-list { overflow-x: hidden; }
-.cur-table tbody tr.swiping { background: #ff3b30 url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='white' stroke-width='1.9' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M4 6.5h16M9.5 6.5V4.5h5v2M6.5 6.5l1 13.5h9l1-13.5M10 10.5v6M14 10.5v6'/%3E%3C/svg%3E") no-repeat right 22px center / 22px 22px; }
-.cur-table tbody tr.swiping > td { background: var(--bg); transform: translateX(var(--sx, 0px)); transition: transform .2s ease; }
-.cur-table tbody tr.sw-move > td { transition: none; }
-.cur-table tbody tr.swipe-arm { background-color: #d70015; }
+/* 红底只画在右侧露出的那一段（宽 = 左移距离），跟着行内容走：
+   之前把红色铺在整行 tr 底下，各单元格单独平移，iPad 上单元格之间、上下边缘的亚像素缝会透出红色，看起来像一圈红框 */
+.cur-table tbody tr.swiping, .cur-table tbody tr.swiping > td { background: var(--bg); }
+.cur-table tbody tr.swiping:nth-child(even), .cur-table tbody tr.swiping:nth-child(even) > td { background: var(--row); }
+.cur-table tbody tr.swiping > td { transform: translateX(var(--sx, 0px)); transition: transform .2s ease; }
+.cur-table tbody tr.swiping > td:last-child { position: relative; overflow: visible; }
 .list li[data-swipe] { position: relative; touch-action: pan-y; }
 .list li.swiping { background: var(--bg); transform: translateX(var(--sx, 0px)); transition: transform .2s ease; }
-.list li.sw-move { transition: none; }
-.list li.swiping::after {
-  content: ""; position: absolute; top: 0; bottom: 0; left: 100%; width: 100vw;
-  background: #ff3b30 url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='white' stroke-width='1.9' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M4 6.5h16M9.5 6.5V4.5h5v2M6.5 6.5l1 13.5h9l1-13.5M10 10.5v6M14 10.5v6'/%3E%3C/svg%3E") no-repeat left 22px center / 22px 22px;
+.cur-table tbody tr.swiping > td:last-child::after, .list li.swiping::after {
+  content: ""; position: absolute; top: 0; bottom: 0; left: 100%;
+  width: calc(-1 * var(--sx, 0px)); transition: width .2s ease;
+  background: #ff3b30 url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='white' stroke-width='1.9' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M4 6.5h16M9.5 6.5V4.5h5v2M6.5 6.5l1 13.5h9l1-13.5M10 10.5v6M14 10.5v6'/%3E%3C/svg%3E") no-repeat right 22px center / 22px 22px;
 }
-.list li.swipe-arm::after { background-color: #d70015; }
-/* 滑动时保留偶数行的底色 */
-.cur-table tbody tr.swiping:nth-child(even) > td { background: var(--row); }
+.cur-table tbody tr.sw-move > td, .cur-table tbody tr.sw-move > td:last-child::after,
+.list li.sw-move, .list li.sw-move::after { transition: none; }
+.cur-table tbody tr.swipe-arm > td:last-child::after, .list li.swipe-arm::after { background-color: #d70015; }
 /* 拉够松手：停在原位整体淡出（连同红底），不再整行滑出露出整条红色 */
 .cur-table tbody tr.sw-del { opacity: 0; transition: opacity .18s ease; }
 .list li.sw-del { opacity: 0; transition: transform .2s ease, opacity .18s ease; }
