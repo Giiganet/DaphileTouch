@@ -8,11 +8,6 @@ Versions follow [Semantic Versioning](https://semver.org/).
 ### Fixed
 - On iPad the pause button showed a colour emoji (⏸️) instead of a plain icon. The play / pause button is now drawn as an SVG icon like the previous / next buttons, so it looks the same on every device. The playing marker in the queue is also forced to text style.
 
-## [0.3.2] - 2026-11-15
-
-### Fixed
-- On iPad the pause button showed a colour emoji (⏸️) instead of a plain icon. The play / pause button is now drawn as an SVG icon like the previous / next buttons, so it looks the same on every device. The playing marker in the queue is also forced to text style.
-
 ## [0.3.1] - 2026-11-15
 
 ### Fixed
