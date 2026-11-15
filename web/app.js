@@ -23,6 +23,27 @@ async function act(fn, errMsg = "操作失败") {
   setTimeout(poll, 150);
 }
 
+/* ---------- 加入中：当前播放标题行转圈，曲目进入列表后消失 ----------
+   整张加入要等 LMS 处理完才返回，会有几秒空白；这期间显示「正在加入…」。
+   命令返回后，等轮询看到 playlist_timestamp 变化（曲目已进列表）再隐藏，最多再等 5 秒兜底。 */
+const Adding = { n: 0, ts: "", until: 0 };
+const showAdding = (on) => { const el = $("cur-adding"); if (el) el.hidden = !on; document.body.classList.toggle("q-adding", on); };
+async function addAct(fn, errMsg = "加入失败") {
+  if (!Adding.n && !Adding.until) Adding.ts = S.st ? String(S.st.playlist_timestamp) : "";
+  Adding.n++;
+  Adding.until = 0;
+  showAdding(true);
+  let ok = true;
+  try { await fn(); } catch (e) { ok = false; toast(errMsg + "：" + e.message); }
+  Adding.n--;
+  if (!Adding.n) { if (ok) Adding.until = Date.now() + 5000; else showAdding(false); }
+  setTimeout(poll, 150);
+}
+function checkAdding() {
+  if (Adding.n || !Adding.until || !S.st) return;
+  if (String(S.st.playlist_timestamp) !== Adding.ts || Date.now() > Adding.until) { Adding.until = 0; showAdding(false); }
+}
+
 function render() {
   const st = S.st;
   if (!st) return;
@@ -198,8 +219,9 @@ function renderQueue(loop, curIdx) {
   $("cur-count").textContent = loop.length ? loop.length + " 首" : "";
   $("btn-save").disabled = !loop.length;   // 空队列不能保存
   $("btn-clear").disabled = !loop.length;  // 空队列不能清除：灰色不可点
+  document.body.classList.toggle("q-empty", !loop.length);   // 空列表加入中：转圈放列表中间，标题行不重复显示
   if (!loop.length) {
-    box.innerHTML = `<div class="empty">当前播放列表是空的。<br>从左侧资料库选择分类，在右侧弹出的窗口里选曲加入。</div>`;
+    box.innerHTML = `<div class="empty"><span class="e-msg">当前播放列表是空的。<br>从左侧资料库选择分类，在右侧弹出的窗口里选曲加入。</span><span class="e-add"><svg viewBox="0 0 16 16" width="18" height="18" aria-hidden="true"><circle cx="8" cy="8" r="6" fill="none" stroke="currentColor" stroke-opacity=".25" stroke-width="2"/><path d="M8 2a6 6 0 0 1 6 6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>正在加入…</span></div>`;
     return;
   }
   box.innerHTML = `<table class="tracks cur-table"><thead><tr>
@@ -224,6 +246,7 @@ async function poll() {
     S.polledAt = Date.now();
     S.fails = 0;
     render();
+    checkAdding();
   } catch (e) {
     S.fails++;
     if (S.fails === 3 && !Upd.since) { toast("与 Daphile 失去连接，正在重试…"); }   // 重启 LMS 期间不提示
@@ -370,13 +393,14 @@ function swallowClick(box) {
 }
 
 /* 向左滑动删除：横向拖动整行，右边露出红底。
-   默认模式（当前播放列表）：滑过 88px 松手即删除，不够就弹回。
+   默认模式（当前播放列表）：红色按钮最宽 76px，垃圾篓居中；拉到按钮露满（垃圾篓到按钮正中）就停住不再变长，此时松手即删除，不够就弹回。
    reveal 模式（喜爱页）：左滑只露出红色「移出」按钮并停住，再点按钮才删除；
      按钮露满后手指不松开、继续左滑，就交给 over（选曲窗口跟手左移，够远松手关闭窗口）；
      轻点这一行、点别处、右滑、列表滚动都会收回——误滑不会丢东西。
    rowSel：可滑动的行；onDelete(row) 负责删除并重绘（可返回 Promise）。拖动排序进行中不触发。 */
 function bindSwipe(box, rowSel, onDelete, { reveal = false, over = null } = {}) {
-  const THRESH = 88, MAX = 110, ELASTIC = 14, START = 10;   // 拉满 88px 可删；最多露出 110px（+14px 弹性）
+  // 当前播放：按钮宽 76px，拉满（72px 起）可删，之后几乎不再变长（最多 +4px 弹性）；喜爱页（reveal）沿用原尺寸
+  const THRESH = reveal ? 88 : 72, MAX = reveal ? 110 : 76, ELASTIC = reveal ? 14 : 4, START = 10;
   const OPEN = 88;   // reveal 模式停住时露出的按钮宽度；拉过一半松手就停住
   const HANDOFF = 8;   // 按钮露满后再多拉这么多，才开始拖动页面（让按钮先完整露出一下）
   let sw = null, open = null;   // open：reveal 模式下当前停住、露出按钮的那一行

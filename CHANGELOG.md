@@ -3,6 +3,15 @@
 All notable changes to this project are documented here.
 Versions follow [Semantic Versioning](https://semver.org/).
 
+## [0.3.7] - 2026-11-15
+
+### Added
+- Waiting indicator while adding music: every add (single track, whole album, folder, whole playlist, folder ＋) shows a blue spinner with “正在加入…” in the Now Playing header in place of the track count, or in the middle of an empty queue in place of the empty message. It hides once LMS reports a changed playlist timestamp (with a 5-second fallback) and immediately on failure.
+- Whole-album / whole-playlist / folder add buttons are disabled and greyed while their request runs, so repeated taps no longer queue the same music several times.
+
+### Fixed
+- Swipe-to-remove in Now Playing: the red button now stops at 76px (arms at 72px, 4px elastic) with the bin icon centred, instead of growing to about 124px with the icon pinned to the right. The Favorites swipe button is unchanged.
+
 ## [0.3.6] - 2026-11-15
 
 ### Added

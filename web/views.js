@@ -123,7 +123,7 @@ const Views = (() => {
       ${trackTable(tracks, { num: true })}`;
     bindTracks((e) => {
       if (e.target.closest("[data-addall]")) {
-        act(async () => { await LMS.loadAlbum(albumId, "add"); toast(`已把整张专辑（${tracks.length} 首）加到当前播放末尾`); });
+        addOnce(e.target.closest("[data-addall]"), async () => { await LMS.loadAlbum(albumId, "add"); toast(`已把整张专辑（${tracks.length} 首）加到当前播放末尾`); });
       }
     });
     markPlaying(S.cur);
@@ -141,6 +141,20 @@ const Views = (() => {
     btn.classList.add("done");
     btn.innerHTML = CHECK;
     setTimeout(() => { btn.classList.remove("done"); btn.innerHTML = PLUS; }, 1200);
+  }
+
+  /* 整张 / 整个 / 目录「＋」加入：请求进行中按钮变灰、不能再点，防止重复加入；当前播放标题行同时转圈 */
+  function addOnce(btn, fn) {
+    if (!btn || btn.dataset.busy) return;
+    btn.dataset.busy = "1";
+    btn.classList.add("busy");
+    const pill = btn.classList.contains("pill"), label = btn.innerHTML;
+    if (pill) btn.textContent = "正在加入…";
+    return Promise.resolve(addAct(fn)).finally(() => {
+      delete btn.dataset.busy;
+      btn.classList.remove("busy");
+      if (pill) btn.innerHTML = label;
+    });
   }
 
   /* ---------- 喜爱：曲目行「＋」前面的心形，只用来添加 ----------
@@ -196,7 +210,7 @@ const Views = (() => {
   function addRow(row, add, title) {
     if (row.dataset.busy) return;
     row.dataset.busy = "1";
-    Promise.resolve(act(async () => {
+    Promise.resolve(addAct(async () => {
       await add();
       toast(`已加入：${title || "1 首"}`);
       flashRow(row);
@@ -243,7 +257,7 @@ const Views = (() => {
     else { setTitle(""); setCount(items.length); }
     bindTracks((e) => {
       const ab = e.target.closest("[data-add]");
-      if (ab) return act(async () => { await items[ab.dataset.add].add(); toast(`已加入：${items[ab.dataset.add].name}`); flashDone(ab); });
+      if (ab) return addOnce(ab, async () => { await items[ab.dataset.add].add(); toast(`已加入：${items[ab.dataset.add].name}`); flashDone(ab); });
       const li = e.target.closest("li[data-i]");
       if (!li) return;
       const it = items[li.dataset.i];
@@ -379,12 +393,12 @@ const Views = (() => {
         </li>`; }).join("")}</ul>` : ""}`;
     bindTracks((e) => {
       if (e.target.closest("[data-addall]")) {
-        return act(async () => { await LMS.loadFolder(folderId, "add"); toast(`已把整张专辑（${tracks.length} 首）加到当前播放末尾`); });
+        return addOnce(e.target.closest("[data-addall]"), async () => { await LMS.loadFolder(folderId, "add"); toast(`已把整张专辑（${tracks.length} 首）加到当前播放末尾`); });
       }
       const ab = e.target.closest("[data-add]");
       if (ab) {
         const o = others[ab.dataset.add];
-        return act(async () => { await LMS.loadFolder(o.id, "add"); toast(`已加入：${o.filename}`); flashDone(ab); });
+        return addOnce(ab, async () => { await LMS.loadFolder(o.id, "add"); toast(`已加入：${o.filename}`); flashDone(ab); });
       }
       const li = e.target.closest("li[data-o]");
       const o = li && others[li.dataset.o];
@@ -450,7 +464,7 @@ const Views = (() => {
     act0.innerHTML = tracks.length ? `<button class="pill" data-addall>＋ 整个加入</button>` : "";
     act0.onclick = (e) => {
       if (e.target.closest("[data-addall]")) {
-        act(async () => { await LMS.loadPlaylist(id, "add"); toast(`已把「${name}」（${tracks.length} 首）加到当前播放末尾`); });
+        addOnce(e.target.closest("[data-addall]"), async () => { await LMS.loadPlaylist(id, "add"); toast(`已把「${name}」（${tracks.length} 首）加到当前播放末尾`); });
       }
     };
     syncHead();

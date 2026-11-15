@@ -576,3 +576,21 @@ img { display: block; }
   background-image: none;
 }
 .list li.sw-press::after { background-color: #d70015; }
+
+/* 加入中：当前播放标题行的转圈提示；被点的「整张加入」/「＋」变灰不可再点 */
+.cur-adding { display: inline-flex; align-items: center; gap: 6px; color: var(--accent); font-size: 13px; white-space: nowrap; animation: upd-in .2s ease-out; }
+.cur-adding[hidden] { display: none; }
+.cur-adding svg { animation: add-spin .8s linear infinite; }
+@keyframes add-spin { to { transform: rotate(360deg); } }
+.pill.busy, .add-btn.busy { opacity: .55; pointer-events: none; }
+
+/* 加入中：转圈临时替换「N 首」，不挤占标题（设备名）宽度；空列表时转圈改放列表中间，替换「列表是空的」 */
+body.q-adding #cur-count { display: none; }
+body.q-empty .cur-adding { display: none; }
+#cur-list .empty .e-add { display: none; }
+body.q-adding #cur-list .empty .e-msg { display: none; }
+body.q-adding #cur-list .empty .e-add { display: inline-flex; align-items: center; gap: 8px; color: var(--accent); }
+#cur-list .empty .e-add svg { animation: add-spin .8s linear infinite; }
+
+/* 当前播放左滑：垃圾篓始终在红色按钮正中（按钮最宽 76px，拉满即停） */
+.cur-table tbody tr.swiping > td:last-child::after { background-position: center; }
