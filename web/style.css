@@ -151,6 +151,9 @@ img { display: block; }
 .lead.lead-track, .lead.lead-other { color: var(--text2); }
 .lead.has-art { background: none; }
 .lead img { display: block; width: 100%; height: 100%; object-fit: cover; }
+/* 选曲窗口左栏（播放列表）较窄：行首图标缩小到 30px */
+.pick-list li .lead { width: 30px; height: 30px; border-radius: 6px; }
+.pick-list li .lead .row-ico { width: 18px; height: 18px; }
 /* 点按反馈：灰色（隔行）底色画在单元格上，所以要连单元格一起加深，否则灰色行被点时看不出变化 */
 .list li:active, .tracks tbody tr:active, .tracks tbody tr:active > td { background: var(--hover); }
 /* 点单曲加入当前播放成功：整行闪一下浅浅的强调色 */
@@ -202,6 +205,7 @@ img { display: block; }
 /* 格式小标签：FLAC  16bit  44.1kHz，每个值一块灰底、深灰字（深色主题下灰底变深、字变浅） */
 .np-fmt { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 12px; }
 .np-fmt:empty { display: none; }
+.album-head .np-fmt { margin-top: 8px; }
 .np-fmt span { padding: 3px 8px; border-radius: 5px; background: var(--chip-bg); color: var(--chip-fg);
   font-size: 12px; font-weight: 600; line-height: 1.4; font-variant-numeric: tabular-nums; }
 .np-meta { display: grid; grid-template-columns: auto 1fr; gap: 6px 12px; margin: 14px 0 10px; font-size: 13px; }
@@ -386,6 +390,15 @@ img { display: block; }
 .pick-detail .empty { color: var(--text2); font-size: 17px; font-weight: 400; padding-top: 30%; }
 /* 没有返回、也没有标题时整行隐藏；.icon-btn 的 inline-flex 会盖掉 hidden，这里补回来 */
 .detail-head[hidden], .detail-head [hidden] { display: none; }
+.head-act:empty { display: none; }
+/* 播放列表详情：数量居中，「整个加入」靠右 */
+.detail-head.centered { display: grid; grid-template-columns: 1fr auto; align-items: center; }
+.detail-head.centered .view-title { display: none; }
+.detail-head.centered #view-count { grid-column: 1; justify-self: start; margin: 0; }
+.detail-head.centered .head-act { grid-column: 2; justify-self: end; display: flex; }
+/* 信息面板里可点的专辑名 */
+.np-link { padding: 0; border: 0; background: none; font: inherit; color: var(--accent); text-align: left; cursor: pointer; word-break: break-word; }
+.np-link:active { opacity: .6; }
 .pill:disabled { opacity: .35; }
 /* 一栏模式（专辑、最近添加、歌曲、文件夹、收藏、搜索）：不显示左栏，右栏占满 */
 .picker-cols.one { grid-template-columns: 1fr; }

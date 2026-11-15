@@ -139,7 +139,10 @@ function renderNowPlaying(cur) {
     ["曲号", v(cur.tracknum)],
     ["时长", cur.duration ? fmtTime(cur.duration) : ""],
   ].filter((r) => r[1]);
-  $("np-meta").innerHTML = rows.map(([k, val]) => `<dt>${k}</dt><dd>${esc(val)}</dd>`).join("");
+  // 专辑名可点：选曲窗口滑入，直接打开这张专辑（全部曲目）
+  const furl = /^file:\/\//.test(cur.url || "") ? cur.url : "";   // 只有本地或网络盘上的文件才有文件夹
+  $("np-meta").innerHTML = rows.map(([k, val]) => `<dt>${k}</dt><dd>${k === "专辑" && furl
+    ? `<button class="np-link" data-folder="${esc(furl)}">${esc(val)}</button>` : esc(val)}</dd>`).join("");
 }
 
 /* ---------- 文件格式小标签：格式  位深  采样率（如 FLAC  16bit  44.1kHz），没有的项不显示 ----------
@@ -513,6 +516,7 @@ function bindPlayer() {
     if (confirm("清除整个播放队列？")) act(LMS.clear);
   };
   $("btn-save").onclick = saveQueue;
+  $("np-meta").onclick = (e) => { const b = e.target.closest("[data-folder]"); if (b) Views.openFolder(b.dataset.folder); };
   bindReorder();
   // 当前播放：向左滑动一行即从队列移除
   bindSwipe($("cur-list"), "tbody tr[data-idx]", (row) => {

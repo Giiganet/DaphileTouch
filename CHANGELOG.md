@@ -3,6 +3,19 @@
 All notable changes to this project are documented here.
 Versions follow [Semantic Versioning](https://semver.org/).
 
+## [0.3.5] - 2026-11-15
+
+### Added
+- In the track info panel the album name is a link: tapping it opens the library at the folder that holds the track, with all of its tracks listed. Tracks that are not files (internet radio) show the album as plain text.
+- Album pages show format, bit depth and sample rate as grey tags like the track info panel; album pages opened from the Albums grid now show them as well (taken from the first track).
+- Playlists in the library list have an icon in front of their names. The playlist icon (also used for playlist files in Folders) is now lines with a note.
+
+### Changed
+- Playlist pages: the first row shows the track count on the left and ＋ 整个加入 (Add whole playlist) on the right; the playlist name is no longer shown there.
+
+### Fixed
+- Playlists containing internet radio streams failed to open with HTTP 502: LMS 9 drops the connection when the tracks of such a playlist are queried without a player. The query is now sent for the current player.
+
 ## [0.3.4] - 2026-11-15
 
 ### Changed

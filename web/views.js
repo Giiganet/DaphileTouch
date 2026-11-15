@@ -13,7 +13,8 @@ const Views = (() => {
   function syncHead() {
     const back = document.getElementById("btn-back");
     const title = document.getElementById("view-title").textContent.trim();
-    document.querySelector(".detail-head").hidden = back.hidden && !title;
+    const head = document.querySelector(".detail-head");
+    head.hidden = back.hidden && !title && !head.classList.contains("centered");
   }
   /* 数量：和名称分开，灰色靠右。分类总数放窗口顶部（setCount），详情里的数量放详情标题行（setTitle 第二个参数） */
   const UNIT = { albums: "张", recent: "张", artists: "位", songs: "首",
@@ -115,6 +116,7 @@ const Views = (() => {
           <h2>${esc(a.album || "未知专辑")}</h2>
           <div class="artist">${esc(a.artist || "未知艺人")}</div>
           <div class="meta">${[a.year && a.year !== 0 ? a.year : "", tracks.length + " 首", fmtTime(totalSec)].filter(Boolean).join(" · ")}</div>
+          ${fmtChips(tracks[0])}
           ${tracks.length ? selectAllBtn(`<button class="pill" data-addall>＋ 整张加入</button>`) : ""}
         </div>
       </div>
@@ -251,7 +253,7 @@ const Views = (() => {
   }
 
   /* 左栏条目（艺人 / 播放列表）：data-k 存条目 id，点选后右栏显示详情 */
-  const leftItem = (id, name) => `<li data-k="${id}" data-name="${esc(name)}"><div class="grow">${esc(name)}</div></li>`;
+  const leftItem = (id, name, icon = "") => `<li data-k="${id}" data-name="${esc(name)}">${icon}<div class="grow">${esc(name)}</div></li>`;
   function leftList(hint, fetchPage, loopKey, nameKey, detailView) {
     reset(empty(hint));
     setTitle("");
@@ -276,7 +278,7 @@ const Views = (() => {
     folder: '<path d="M3 7.25A1.75 1.75 0 0 1 4.75 5.5h4.1l2 2.25h8.4A1.75 1.75 0 0 1 21 9.5v8.25a1.75 1.75 0 0 1-1.75 1.75H4.75A1.75 1.75 0 0 1 3 17.75z"/><path d="M3 10.25h18"/>',
     disc: '<circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="2.6"/><path d="M12 6.2a5.8 5.8 0 0 1 5.8 5.8M6.2 12a5.8 5.8 0 0 0 5.8 5.8"/>',
     track: '<path d="M10 17.5V4.5l9-1.75v3.5L10 8"/><circle cx="7.25" cy="17.6" r="2.75"/>',
-    playlist: '<path d="M3.5 5.25h17M3.5 9.75h17M3.5 14.25h17M3.5 18.75h17"/>',
+    playlist: '<path d="M3.5 6h12M3.5 10.5h12M3.5 15h7.5M18.5 17.5V8.25l3-0.9"/><circle cx="16.25" cy="17.6" r="2.25"/>',
     other: '<path d="M6 2.75h8l4.5 4.5v14H6zM14 2.75v4.5h4.5"/>',
   };
   const svgOf = (k) => `<svg class="row-ico" viewBox="0 0 24 24" aria-hidden="true">${ICO[k]}</svg>`;
@@ -325,11 +327,14 @@ const Views = (() => {
   const FMT = { flc: "FLAC", wav: "WAV", aif: "AIFF", alc: "ALAC", mp3: "MP3", aac: "AAC", mp4: "AAC", ogg: "Ogg",
     ops: "Opus", dsf: "DSD", dff: "DSD", wvp: "WavPack", ape: "APE", wma: "WMA" };
   const secOf = (d) => typeof d === "number" ? d : String(d || "").split(":").reduce((s, x) => s * 60 + Number(x || 0), 0);
-  function fmtInfo(i) {
+  /* 格式小标签：和曲目信息面板一样，FLAC  16bit  44.1kHz 各占一块 */
+  function fmtChips(i) {
+    if (!i) return "";
     const kind = FMT[i.type] || (i.type ? String(i.type).toUpperCase() : "");
-    const rate = Number(i.samplerate) ? `${+(i.samplerate / 1000).toFixed(1)}kHz` : "";
-    const bits = Number(i.samplesize) ? `${i.samplesize}bit` : "";
-    return [kind, [rate, bits].filter(Boolean).join("/")].filter(Boolean).join(" ");
+    const r = Number(i.samplerate) || 0, b = Number(i.samplesize) || 0;
+    const rate = !r ? "" : r >= 1e6 ? `${+(r / 1e6).toFixed(1)}MHz` : `${+(r / 1000).toFixed(1)}kHz`;
+    const list = [kind, b ? `${b}bit` : "", rate].filter(Boolean);
+    return list.length ? `<div class="np-fmt">${list.map((x) => `<span>${esc(x)}</span>`).join("")}</div>` : "";
   }
   async function albumFolder(folderId, name, loop, depth, net) {
     reset(empty("加载中…"));
@@ -347,7 +352,7 @@ const Views = (() => {
     const cover = (files.find((f) => f.coverid) || {}).coverid || info.coverid || "";
     const total = tracks.reduce((s, t) => s + secOf(t.duration), 0);
     const year = Number(info.year) ? info.year : "";
-    const meta = [year, tracks.length + " 首", total ? fmtTime(total) : "", fmtInfo(info)].filter(Boolean).join(" · ");
+    const meta = [year, tracks.length + " 首", total ? fmtTime(total) : ""].filter(Boolean).join(" · ");
     // 目录里混了别的专辑的曲目（如合辑、榜单）：标题用目录名，艺人写「多位艺人」，免得把第一首的专辑当成整个目录
     const mixed = files.some((f) => !byId.has(String(f.id)));
     const albumName = mixed ? (name || info.album) : (info.album || name);
@@ -360,6 +365,7 @@ const Views = (() => {
           <h2>${esc(albumName || "未知专辑")}</h2>
           <div class="artist">${esc(artistName || "未知艺人")}</div>
           <div class="meta">${esc(meta)}</div>
+          ${fmtChips(info)}
           ${selectAllBtn(`<button class="pill" data-addall>＋ 整张加入</button>`)}
         </div>
       </div>
@@ -423,7 +429,7 @@ const Views = (() => {
     const r = await LMS.playlists();
     const pls = r.playlists_loop || [];
     setCount(pls.length);
-    pickList().innerHTML = pls.length ? `<ul class="list" id="pl">${pls.map((p) => leftItem(p.id, p.playlist)).join("")}</ul>` : empty("没有播放列表");
+    pickList().innerHTML = pls.length ? `<ul class="list" id="pl">${pls.map((p) => leftItem(p.id, p.playlist, lead("playlist"))).join("")}</ul>` : empty("没有播放列表");
     const pl = document.getElementById("pl");
     if (pl) pl.onclick = (e) => {
       const li = e.target.closest("li[data-k]");
@@ -431,17 +437,24 @@ const Views = (() => {
     };
   }
 
+  /* 播放列表详情：第一行不显示名称（左栏已高亮），中间是曲目数，最右是「＋ 整个加入」 */
   async function playlistDetail({ id, name }) {
     reset(empty("加载中…"));
     const r = await LMS.playlistTracks(id);
     const tracks = r.playlisttracks_loop || [];
-    reset(`${tracks.length ? selectAllBtn(`<button class="pill" data-addall>＋ 整个加入</button>`) : ""}${trackTable(tracks, { artist: true })}`);
-    setTitle(name, tracks.length, "首");
-    bindTracks((e) => {
+    reset(trackTable(tracks, { artist: true }));
+    setTitle("");
+    const head = document.querySelector(".detail-head"), act0 = document.getElementById("view-act");
+    head.classList.add("centered");
+    document.getElementById("view-count").textContent = fmtCount(tracks.length, "首");
+    act0.innerHTML = tracks.length ? `<button class="pill" data-addall>＋ 整个加入</button>` : "";
+    act0.onclick = (e) => {
       if (e.target.closest("[data-addall]")) {
         act(async () => { await LMS.loadPlaylist(id, "add"); toast(`已把「${name}」（${tracks.length} 首）加到当前播放末尾`); });
       }
-    });
+    };
+    syncHead();
+    bindTracks(() => {});
   }
 
   async function favorites(arg) {
@@ -506,6 +519,9 @@ const Views = (() => {
   async function go(view, arg) {
     current = { view, arg };
     content().onclick = null;
+    // 播放列表详情专用的标题行布局（数量居中、右侧按钮），换页面时清掉
+    document.querySelector(".detail-head").classList.remove("centered");
+    const va = document.getElementById("view-act"); va.innerHTML = ""; va.onclick = null;
     if (TOP.has(view)) setCols(view);   // 换分类时重设一栏/两栏；进入详情时左栏保持不动
     document.getElementById("btn-back").hidden = !stack.length;
     syncHead();
@@ -549,6 +565,22 @@ const Views = (() => {
     p.classList.add("closing");
     p.addEventListener("animationend", (e) => { if (e.target === p) done(); }, { once: true });
     setTimeout(done, 400);   // 兜底：动画事件没触发也能收起
+  }
+  /* 从信息面板点专辑名：选曲窗口滑入，直接打开这首曲目所在的文件夹；返回键回到「文件夹」顶层 */
+  async function openFolder(trackUrl) {
+    const dir = String(trackUrl).replace(/\/[^/]*$/, "");
+    const r = await LMS.folderByUrl(dir).catch(() => ({}));
+    const f = (r.folder_loop || [])[0];
+    if (!f || f.type !== "folder" || !f.id) return toast("找不到这首曲目所在的文件夹");
+    stack.length = 0;
+    rootView = "folders";
+    document.getElementById("filter").value = "";
+    document.querySelectorAll(".nav-item").forEach((x) => x.classList.toggle("active", x.dataset.view === "folders"));
+    showPicker(true);
+    setCols("folders");
+    stack.push({ view: "folders" });
+    // depth 2：按专辑样式显示目录里的曲目；net 只影响前两层图标
+    go("folder", { id: f.id, name: f.filename, depth: 2, net: /\/Network%20Drives\//i.test(dir) });
   }
   function root(view) {
     stack.length = 0;
@@ -706,5 +738,5 @@ const Views = (() => {
     if (pickerOpen() && rootView === "playlists") { stack.length = 0; go("playlists"); }
   }
 
-  return { init, markPlaying, refreshPlaylists };
+  return { init, markPlaying, refreshPlaylists, openFolder };
 })();

@@ -4,7 +4,7 @@
 const LMS = (() => {
   const BASE = location.pathname.startsWith("/plugins/") ? "" : "/lms";
   // A：按角色返回 composer/conductor/band/albumartist 等；g：流派
-  const STATUS_TAGS = "tags:aAcdglKNoxrTIjJQyt";
+  const STATUS_TAGS = "tags:aAcdglKNoxrTIjJQytu";   // u：文件路径，信息面板点专辑名跳到所在文件夹用
   let playerId = null;
 
   async function rpc(player, cmd) {
@@ -135,13 +135,16 @@ const LMS = (() => {
     folder: (folderId) => q(["musicfolder", 0, 500, "tags:dcuj", ...(folderId ? ["folder_id:" + folderId] : [])]),
     // 只看目录里的第一项：是曲目就说明这是专辑目录，coverid 即目录封面（LMS 扫描时已把 cover 文件关联到曲目）
     folderPeek: (folderId) => q(["musicfolder", 0, 1, "tags:cj", "folder_id:" + folderId]),
+    // 按目录路径查这个文件夹本身（return_top 返回它的 id 和名称）
+    folderByUrl: (url) => q(["musicfolder", 0, 1, "tags:u", "url:" + url, "return_top:1"]),
     // 单曲详情：songinfo 返回 [{id},{title},…] 一键一项，这里合并成一个对象（专辑名、艺人、年份、album_id、格式）
     songInfo: async (trackId) => {
       const r = await q(["songinfo", 0, 100, "track_id:" + trackId, "tags:alyeoTIc"]);
       return Object.assign({}, ...(r.songinfo_loop || []));
     },
     playlists: () => q(["playlists", 0, 200]),
-    playlistTracks: (plId) => q(["playlists", "tracks", 0, 500, "playlist_id:" + plId, "tags:acdtjJKl"]),
+    // 带上当前设备查询：列表里有网络流（电台 http/m3u8）时，LMS 不带设备会直接断开连接（浏览器报 502 / 网络错误）
+    playlistTracks: (plId) => rpc(playerId || 0, ["playlists", "tracks", 0, 500, "playlist_id:" + plId, "tags:acdtjJKl"]),
     favorites: (itemId) => q(["favorites", "items", 0, 200, "want_url:1", ...(itemId ? ["item_id:" + itemId] : [])]),
     /* 喜爱（LMS 收藏夹）：exists 可直接用曲目 id，返回 {exists, index}；删除用 index，加入要文件 url */
     favExists: (trackId) => q(["favorites", "exists", String(trackId)]),
