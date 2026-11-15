@@ -23,21 +23,6 @@ async function act(fn, errMsg = "操作失败") {
   setTimeout(poll, 150);
 }
 
-/* 格式标签：AAC 256 kbps · 16 bit / 44.1 kHz */
-function formatLabel(t) {
-  if (!t) return "";
-  const type = { mp4: "AAC", aac: "AAC", alc: "ALAC", flc: "FLAC", mp3: "MP3", wav: "WAV", aif: "AIFF", dsf: "DSD", dff: "DSD", ogg: "OGG" }[t.type] || (t.type || "").toUpperCase();
-  const lossless = t.lossless === "1" || t.lossless === 1;
-  const parts = [];
-  let first = type;
-  if (!lossless && t.bitrate) first += " " + String(t.bitrate).replace(/kbps.*/i, " kbps").trim();
-  if (first) parts.push(first);
-  const rate = t.samplerate ? (Number(t.samplerate) / 1000).toString().replace(/\.0$/, "") + " kHz" : "";
-  const bits = t.samplesize ? t.samplesize + " bit" : "";
-  if (bits || rate) parts.push([bits, rate].filter(Boolean).join(" / "));
-  return parts.join(" · ");
-}
-
 function render() {
   const st = S.st;
   if (!st) return;
@@ -203,7 +188,6 @@ async function poll() {
     render();
   } catch (e) {
     S.fails++;
-    // 连不上时电源图标按关机显示（灰色）
     if (S.fails === 3) { toast("与 Daphile 失去连接，正在重试…"); }
   }
   // 页面在后台时降低频率

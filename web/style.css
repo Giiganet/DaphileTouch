@@ -83,9 +83,6 @@ img { display: block; }
   display: flex; align-items: center; gap: 8px;
   font-size: 13px; color: var(--text2);
 }
-.dot { width: 8px; height: 8px; border-radius: 50%; background: var(--text3); flex: none; }
-.dot.ok { background: #34c759; }
-.dot.bad { background: var(--danger); }
 
 /* ---------- 主区 ---------- */
 .main { position: relative; display: flex; flex-direction: column; min-width: 0; }
@@ -175,11 +172,7 @@ img { display: block; }
   background: var(--side); display: flex; flex-direction: column; min-height: 0;
 }
 .queue[hidden] { display: none; }
-.queue-head { display: flex; justify-content: space-between; align-items: center; height: 52px; padding: 0 14px; }
-.link-btn { min-height: 44px; padding: 0 4px; font-size: 13px; }
-.danger { color: var(--danger); }
 .panel-scroll { flex: 1; min-height: 0; overflow-y: auto; -webkit-overflow-scrolling: touch; padding-bottom: 110px; }
-.queue-list { list-style: none; margin: 0; padding: 0 8px; }
 
 /* 正在播放信息 */
 .np { padding: 18px 16px 8px; border-bottom: 1px solid var(--line); }
@@ -191,13 +184,6 @@ img { display: block; }
 .np-meta { display: grid; grid-template-columns: auto 1fr; gap: 6px 12px; margin: 14px 0 10px; font-size: 13px; }
 .np-meta dt { color: var(--text2); white-space: nowrap; }
 .np-meta dd { margin: 0; min-width: 0; word-break: break-word; }
-.queue-list li { display: flex; gap: 10px; align-items: center; min-height: 52px; padding: 4px 6px; border-radius: 6px; }
-.queue-list li.cur { background: var(--hover); }
-.queue-list li.past { opacity: .5; }
-.queue-list img { width: 40px; height: 40px; border-radius: 4px; object-fit: cover; background: var(--row); flex: none; }
-.queue-list .q1 { font-size: 13px; }
-.queue-list .q2 { font-size: 12px; color: var(--text2); }
-.queue-list .q1, .queue-list .q2 { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
 /* ---------- 底部悬浮播放条 ---------- */
 .player {
@@ -360,7 +346,6 @@ img { display: block; }
 /* 没有返回、也没有标题时整行隐藏；.icon-btn 的 inline-flex 会盖掉 hidden，这里补回来 */
 .detail-head[hidden], .detail-head [hidden] { display: none; }
 .pill:disabled { opacity: .35; }
-.pill.ghost { background: var(--row); color: var(--text); min-width: 0; height: 36px; padding: 0 16px; font-weight: 500; }
 /* 一栏模式（专辑、最近添加、歌曲、文件夹、收藏、搜索）：不显示左栏，右栏占满 */
 .picker-cols.one { grid-template-columns: 1fr; }
 .picker-cols.one .pick-list { display: none; }

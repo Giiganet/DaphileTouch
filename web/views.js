@@ -1,4 +1,4 @@
-/* 资料库视图：专辑网格/详情、最近添加、艺人、歌曲、流派、文件夹、播放列表、收藏、搜索 */
+/* 资料库视图：专辑网格/详情、最近添加、艺人、歌曲、文件夹、播放列表、喜爱、搜索 */
 const Views = (() => {
   const PAGE = 60;
   const content = () => document.getElementById("content");
@@ -16,7 +16,7 @@ const Views = (() => {
     document.querySelector(".detail-head").hidden = back.hidden && !title;
   }
   /* 数量：和名称分开，灰色靠右。分类总数放窗口顶部（setCount），详情里的数量放详情标题行（setTitle 第二个参数） */
-  const UNIT = { albums: "张", recent: "张", artists: "位", songs: "首", genres: "个",
+  const UNIT = { albums: "张", recent: "张", artists: "位", songs: "首",
     folders: "项", playlists: "个", favorites: "项" };
   const fmtCount = (n, unit) => (n === undefined || n === null || n === "") ? "" : `${n} ${unit || ""}`.trim();
   const setCount = (n) => {
@@ -29,10 +29,10 @@ const Views = (() => {
   };
   const empty = (msg) => `<div class="empty">${esc(msg)}</div>`;
 
-  /* ---------- 分栏：艺人/流派/播放列表用两栏（左列条目、右列详情），其余只用一栏 ---------- */
+  /* ---------- 分栏：艺人/播放列表用两栏（左列条目、右列详情），其余只用一栏 ---------- */
   const pickList = () => document.getElementById("pick-list");
   const TWO = new Set(["artists", "playlists"]);
-  const CAT = { albums: "专辑", recent: "最近添加", artists: "艺人", songs: "歌曲", genres: "流派",
+  const CAT = { albums: "专辑", recent: "最近添加", artists: "艺人", songs: "歌曲",
     folders: "文件夹", playlists: "播放列表", favorites: "喜爱", search: "搜索" };
   let listPager = null;      // 左栏的分页加载器
   function setCols(view) {
@@ -84,8 +84,8 @@ const Views = (() => {
     content().scrollTop = 0;
   }
 
-  /* ---------- 专辑网格（专辑 / 最近添加 / 艺人或流派下的专辑） ---------- */
-  /* title 为空：分类首页（专辑、最近添加），数量放窗口顶部；否则是艺人/流派下的专辑，数量放详情标题行 */
+  /* ---------- 专辑网格（专辑 / 最近添加 / 艺人下的专辑） ---------- */
+  /* title 为空：分类首页（专辑、最近添加），数量放窗口顶部；否则是艺人下的专辑，数量放详情标题行 */
   function albumGrid(title, extra) {
     reset(`<div class="grid" id="grid"></div>`);
     setTitle(title);
@@ -124,7 +124,6 @@ const Views = (() => {
         act(async () => { await LMS.loadAlbum(albumId, "add"); toast(`已把整张专辑（${tracks.length} 首）加到当前播放末尾`); });
       }
     });
-    syncAllBtn();
     markPlaying(S.cur);
   }
 
@@ -182,7 +181,7 @@ const Views = (() => {
       ${opt.num ? `<td class="num">${esc(t.tracknum || i + 1)}</td>` : ""}
       <td class="ttl">${esc(t.title)}${opt.artist ? `<div class="sub">${esc([t.artist, t.album].filter(Boolean).join(" — "))}</div>` : ""}</td>
       <td class="dur">${t.duration ? fmtTime(t.duration) : ""}</td>
-      <td class="fav">${favBtn(t.id)}</td>
+      <td class="fav">${favBtn()}</td>
       <td class="plus">${plusBtn("data-plus")}</td></tr>`;
 
   /* ---------- 选曲：点行尾「＋」把单曲加到当前播放末尾 ---------- */
@@ -206,7 +205,6 @@ const Views = (() => {
       if (other) other(e);
     };
   }
-  const syncAllBtn = () => {};
 
   /* ---------- 歌曲（全部，分页） ---------- */
   function songs(extra = []) {
@@ -220,12 +218,12 @@ const Views = (() => {
 
   /* ---------- 通用列表 ---------- */
   function list(title, items, onPick) {
-    // it.track：可勾选的单曲；it.add：整项（文件夹/播放列表）加到当前播放末尾
+    // it.track：单曲（行尾心形和「＋」）；it.add：整项（文件夹/播放列表）加到当前播放末尾
     reset(items.length ? `<ul class="list" id="ls">${items.map((it, i) => `
       <li data-i="${i}"${it.track ? ` data-id="${it.id}" data-title="${esc(it.name)}"` : ""}${it.swipe ? ` data-swipe="${esc(it.swipe)}" data-title="${esc(it.name)}"` : ""}>
         ${it.lead || (it.thumb !== undefined ? thumb(it.thumb) : "")}
         <div class="grow">${esc(it.name)}${it.sub ? `<div class="sub">${esc(it.sub)}</div>` : ""}</div>
-        ${it.track ? favBtn(it.id) + plusBtn("data-plus") : it.add ? plusBtn(`data-add="${i}"`) : ""}
+        ${it.track ? favBtn() + plusBtn("data-plus") : it.add ? plusBtn(`data-add="${i}"`) : ""}
         ${it.more ? `<span style="color:var(--text3)">›</span>` : ""}
       </li>`).join("")}</ul>` : empty("没有内容"));
     // title 为空：分类首页（文件夹、收藏），数量放窗口顶部；否则是子目录，数量放详情标题行
@@ -239,9 +237,9 @@ const Views = (() => {
     });
   }
 
-  /* 左栏条目（艺人 / 流派 / 播放列表）：data-k 存条目 id，点选后右栏显示详情 */
+  /* 左栏条目（艺人 / 播放列表）：data-k 存条目 id，点选后右栏显示详情 */
   const leftItem = (id, name) => `<li data-k="${id}" data-name="${esc(name)}"><div class="grow">${esc(name)}</div></li>`;
-  function leftList(cat, hint, fetchPage, loopKey, nameKey, detailView) {
+  function leftList(hint, fetchPage, loopKey, nameKey, detailView) {
     reset(empty(hint));
     setTitle("");
     pickList().innerHTML = `<ul class="list" id="pl"></ul>`;
@@ -255,9 +253,8 @@ const Views = (() => {
   }
 
   function artists() {
-    leftList("艺人", "选择艺人", (s, n) => LMS.artists(s, n), "artists_loop", "artist", "artist");
+    leftList("选择艺人", (s, n) => LMS.artists(s, n), "artists_loop", "artist", "artist");
   }
-
 
   /* ---------- 文件夹：行首图标区分 磁盘 / 网络盘 / 目录 / 专辑目录 / 曲目 ---------- */
   const ICO = {
@@ -432,7 +429,6 @@ const Views = (() => {
         act(async () => { await LMS.loadPlaylist(id, "add"); toast(`已把「${name}」（${tracks.length} 首）加到当前播放末尾`); });
       }
     });
-    syncAllBtn();
   }
 
   async function favorites(arg) {
@@ -467,7 +463,7 @@ const Views = (() => {
     content().innerHTML = `
       ${ar.length ? `<div class="section-h">艺人</div><ul class="list">${ar.map((a) => `<li data-artist="${a.contributor_id}" data-name="${esc(a.contributor)}"><div class="grow">${esc(a.contributor)}</div><span style="color:var(--text3)">›</span></li>`).join("")}</ul>` : ""}
       ${al.length ? `<div class="section-h">专辑</div><ul class="list">${al.map((a) => `<li data-album="${a.album_id}"><div class="grow">${esc(a.album)}</div><span style="color:var(--text3)">›</span></li>`).join("")}</ul>` : ""}
-      ${tr.length ? `<div class="section-h">歌曲</div><ul class="list">${tr.map((t) => `<li data-id="${t.track_id}" data-title="${esc(t.track)}"><div class="grow">${esc(t.track)}</div>${favBtn(t.track_id)}${plusBtn("data-plus")}</li>`).join("")}</ul>` : ""}`;
+      ${tr.length ? `<div class="section-h">歌曲</div><ul class="list">${tr.map((t) => `<li data-id="${t.track_id}" data-title="${esc(t.track)}"><div class="grow">${esc(t.track)}</div>${favBtn()}${plusBtn("data-plus")}</li>`).join("")}</ul>` : ""}`;
     bindTracks((e) => {
       const li = e.target.closest("li");
       if (!li) return;

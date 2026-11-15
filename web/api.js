@@ -79,12 +79,10 @@ const LMS = (() => {
       if (playIndex != null) c.push("play_index:" + playIndex);
       return p(c);
     },
-    loadTrack: (trackId, cmd = "load") => p(["playlistcontrol", "cmd:" + cmd, "track_id:" + trackId]),
     loadPlaylist: (plId, cmd = "load") => p(["playlistcontrol", "cmd:" + cmd, "playlist_id:" + plId]),
     loadFolder: (folderId, cmd = "load") => p(["playlistcontrol", "cmd:" + cmd, "folder_id:" + folderId]),
-    playFavorite: (itemId) => p(["favorites", "playlist", "play", "item_id:" + itemId]),
     addFavorite: (itemId) => p(["favorites", "playlist", "add", "item_id:" + itemId]),
-    /* 按勾选顺序把多首曲目加到当前播放末尾（track_id 可用逗号连接） */
+    /* 按给定顺序把多首曲目加到当前播放末尾（track_id 可用逗号连接） */
     addTracks: (ids) => p(["playlistcontrol", "cmd:add", "track_id:" + ids.join(",")]),
 
     /* 资料库查询 */
@@ -92,7 +90,6 @@ const LMS = (() => {
     albumTracks: (albumId) => q(["titles", 0, 500, "album_id:" + albumId, "tags:acdtjJKsoTIrQye", "sort:tracknum"]),
     songs: (start, n, extra = []) => q(["titles", start, n, "tags:acdtjlJKe", "sort:title", ...extra]),
     artists: (start, n, extra = []) => q(["artists", start, n, ...extra]),
-    genres: (start, n) => q(["genres", start, n]),
     folder: (folderId) => q(["musicfolder", 0, 500, "tags:dcuj", ...(folderId ? ["folder_id:" + folderId] : [])]),
     // 只看目录里的第一项：是曲目就说明这是专辑目录，coverid 即目录封面（LMS 扫描时已把 cover 文件关联到曲目）
     folderPeek: (folderId) => q(["musicfolder", 0, 1, "tags:cj", "folder_id:" + folderId]),
