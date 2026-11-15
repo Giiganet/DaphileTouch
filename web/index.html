@@ -12,8 +12,16 @@
    手动拨过开关时记成「主题@当时的系统主题」，系统主题变了这次手动选择就作废，重新跟随系统 */
 (function () { var sys = matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light", o = null;
   try { localStorage.removeItem("daphile.theme"); o = (localStorage.getItem("daphile.themeOverride") || "").split("@"); } catch (e) {}
-  document.documentElement.dataset.theme = o && o[1] === sys && (o[0] === "dark" || o[0] === "light") ? o[0] : sys; })();</script>
-<link rel="stylesheet" href="style.css?v=0.3.0">
+  document.documentElement.dataset.theme = o && o[1] === sys && (o[0] === "dark" || o[0] === "light") ? o[0] : sys; })();
+/* 页面高度跟着屏幕走：iPad 旋转后 Safari 有时不重算 100% 高度，横屏回来仍按竖屏的高度排版。
+   这里在旋转、窗口变化时量可见高度写入 --app-h，并把旋转中被带偏的页面滚动复位 */
+(function () { var de = document.documentElement, t = 0;
+  function fit() { var h = Math.round(window.visualViewport ? visualViewport.height : innerHeight) || innerHeight;
+    de.style.setProperty("--app-h", h + "px"); if (scrollX || scrollY) scrollTo(0, 0); }
+  function later() { fit(); clearTimeout(t); t = setTimeout(fit, 350); }   // 旋转动画结束后再量一次，取最终尺寸
+  fit(); addEventListener("resize", later); addEventListener("orientationchange", later); addEventListener("pageshow", later);
+  if (window.visualViewport) visualViewport.addEventListener("resize", later); })();</script>
+<link rel="stylesheet" href="style.css?v=0.3.1">
 </head>
 <body>
 <div class="app" id="app">
@@ -37,7 +45,7 @@
         <span class="ts-track" aria-hidden="true"><span class="ts-knob"></span></span>
         <svg class="ts-moon" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 14.6A8.2 8.2 0 0 1 9.4 4a8.2 8.2 0 1 0 10.6 10.6z"/></svg>
       </button>
-      <div class="app-ver" id="app-ver" aria-label="版本">v0.3.0</div>
+      <div class="app-ver" id="app-ver" aria-label="版本">v0.3.1</div>
     </div>
   </nav>
 
@@ -91,7 +99,7 @@
   <!-- 右侧「正在播放」信息面板（下方附继续播放队列） -->
   <aside class="queue" id="queue" hidden>
     <div class="panel-scroll">
-      <div class="np" id="np">
+      <div class="np">
         <img class="np-art" id="np-art" alt="" hidden>
         <div class="np-art np-art-empty" id="np-art-empty"></div>
         <div class="np-title" id="np-title">未在播放</div>
@@ -133,7 +141,7 @@
         </svg>
       </button>
     </div>
-    <div class="lcd" id="lcd">
+    <div class="lcd">
       <span class="lcd-cover"><img id="lcd-cover" alt="" hidden></span>
       <div class="lcd-text">
         <div class="lcd-title" id="lcd-title">未在播放</div>
@@ -188,9 +196,9 @@
 </div>
 
 <div class="toast" id="toast" hidden></div>
-<script src="api.js?v=0.3.0"></script>
-<script src="views.js?v=0.3.0"></script>
-<script src="rhythm.js?v=0.3.0"></script>
-<script src="app.js?v=0.3.0"></script>
+<script src="api.js?v=0.3.1"></script>
+<script src="views.js?v=0.3.1"></script>
+<script src="rhythm.js?v=0.3.1"></script>
+<script src="app.js?v=0.3.1"></script>
 </body>
 </html>

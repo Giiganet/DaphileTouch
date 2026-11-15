@@ -49,7 +49,7 @@ function render() {
   mb.classList.toggle("muted", muted);
   mb.setAttribute("aria-label", !canMute ? "静音不可用（此设备为固定音量输出）" : muted ? "取消静音" : "静音");
   mb.title = !canMute ? "此设备为固定音量输出，无法静音" : "";
-  // 「当前播放」标题后显示当前播放设备名（切换设备后下一次刷新即更新）
+  // 「当前播放设备」标题后显示设备名（换设备后下一次刷新即更新）
   const devName = st.player_name || "";
   if ($("cur-dev-name").textContent !== devName) {
     $("cur-dev-name").textContent = devName;
@@ -481,10 +481,10 @@ function bindPlayer() {
     return li && !li.classList.contains("offline") ? li : null;   // 离线设备点了不响应
   };
 
-  // 播放条上的 AirPlay 弹窗
+  // 播放条上的 AirPlay 弹窗：把正在播放的内容转到另一台设备（切换喇叭）
   const devBox = $("devices");
   const closeDevices = () => { devBox.hidden = true; $("btn-devices").classList.remove("on"); };
-  // 「当前播放 · 设备名 ⌄」标题下拉菜单
+  // 「当前播放设备 · 设备名 ⌄」标题下拉菜单：换成控制另一台设备，连同它自己的播放列表（切换环境）
   const devMenu = $("dev-menu"), devBtn = $("cur-dev");
   const closeDevMenu = () => { devMenu.hidden = true; devBtn.classList.remove("open"); devBtn.setAttribute("aria-expanded", "false"); };
 

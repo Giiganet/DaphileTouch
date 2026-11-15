@@ -11,7 +11,7 @@ const Rhythm = (() => {
   const DBMIN = -66, DBMAX = -6;   // 柱高 0–满格对应的 dB 范围
   let on = false, cv = null, g = null, ac = null, getPos = null, delay = 0;
   let trk = null;          // 当前曲目的文件信息与解码所需的文件头
-  let busy = false, failUntil = 0, unsupported = false;
+  let busy = false, failUntil = 0;
   const bars = new Float32Array(NB);
   let raf = 0;
 
@@ -100,7 +100,7 @@ const Rhythm = (() => {
     });
   }
 
-  /* 读并解码从曲目内第 sec 秒开始的一段；返回 {t0, t1, db}，t0/t1 为曲目内秒数 */
+  /* 读并解码从曲目内第 sec 秒开始的一段；返回 {t0, t1, sp}，t0/t1 为曲目内秒数，sp 为这一段的频谱 */
   async function segment(t, sec) {
     const span = Math.max(2, Math.min(SPAN, 3e6 / t.bps));
     const abs = t.off + sec;
@@ -156,7 +156,7 @@ const Rhythm = (() => {
   }
 
   /* ---------- 频谱 ----------
-     每 1/FPS 秒取一个窗口做 FFT，40 Hz–16 kHz 按对数分成 NB 段；
+     每 1/FPS 秒取一个窗口做 FFT，FMIN–FMAX（50 Hz–16 kHz）按对数分成 NB 段；
      左右声道各算一遍，每段取较大的那个（任一声道有声即亮，都静音才不亮）。
      结果按 0–255 存成 Uint8Array（每帧 NB 个值）。 */
   const tables = {};
@@ -215,21 +215,21 @@ const Rhythm = (() => {
     return out;
   }
 
-  let segs = [], curId = null, want = null, color = "#6e6e73", colorAt = 0, lastErr = "";
+  let segs = [], curId = null, want = null, color = "#6e6e73", colorAt = 0;
 
   /* 换歌：读新曲目的文件头；不支持的格式记下来，灯就不亮 */
   function setTrack(id) { curId = id == null ? null : String(id); if (on) load(); }
   async function load() {
     const id = curId;
     if (want === id) return;
-    want = id; trk = null; segs = []; unsupported = false; failUntil = 0; lastErr = "";
+    want = id; trk = null; segs = []; failUntil = 0;
     mark(false);
     if (!id) return;
     try {
       const t = await prepare(await LMS.fileInfo(id));
       if (want === id) trk = t;
     } catch (_) {
-      if (want === id) { unsupported = true; mark(true); }
+      if (want === id) mark(true);
     }
   }
 
@@ -243,7 +243,7 @@ const Rhythm = (() => {
     try {
       const s = await segment(t, cur ? cur.t1 : pos);
       if (t === trk) segs = segs.filter((x) => x.t1 > pos - 1).concat(s).slice(-3);
-    } catch (e) { lastErr = String((e && e.message) || e); failUntil = Date.now() + 3000; }   // 读或解码失败：3 秒后再试
+    } catch (_) { failUntil = Date.now() + 3000; }   // 读或解码失败：3 秒后再试
     busy = false;
   }
   /* 取当前位置那一帧的 NB 个频段值（0–255），没有数据返回 null */
@@ -311,11 +311,5 @@ const Rhythm = (() => {
     attach, setTrack, setOn,
     get on() { return on; },
     setDelay: (s) => { delay = Number(s) || 0; },
-    /* 排查用：当前曲目解析结果、已解码的时间段、最近一次错误、当前最高柱 */
-    get debug() {
-      return { trk: trk && { type: trk.type, start: trk.start, bps: Math.round(trk.bps), corr: trk.corr, off: trk.off },
-               segs: segs.map((s) => [+s.t0.toFixed(2), +s.t1.toFixed(2), s.sp.length / NB]), lastErr, unsupported,
-               level: +Math.max(...bars).toFixed(3) };
-    },
   };
 })();

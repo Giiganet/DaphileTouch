@@ -3,6 +3,14 @@
 All notable changes to this project are documented here.
 Versions follow [Semantic Versioning](https://semver.org/).
 
+## [0.3.1] - 2026-11-15
+
+### Fixed
+- After rotating an iPad to portrait and back to landscape, Safari kept laying the page out at the portrait height: the sidebar ran past the bottom of the screen and the theme switch could not be reached. The page height is now locked to the visible screen height (re-measured on rotation, resize and when returning to the page), and the sidebar, Now Playing list and queue panel each scroll inside that height. Before this, a tall Now Playing panel could already push the sidebar off screen right after loading.
+
+### Changed
+- Internal clean-up: removed the spectrum debug hook, unused element ids and outdated code comments. No visible change.
+
 ## [0.3.0] - 2026-11-15
 
 ### Added
