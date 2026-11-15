@@ -3,6 +3,11 @@
 All notable changes to this project are documented here.
 Versions follow [Semantic Versioning](https://semver.org/).
 
+## [0.1.1] - 2026-11-15
+
+### Fixed
+- The player page `/plugins/DaphileTouch/index.html` returned 404 after installing the plugin. LMS only serves `.html` files from plugin folders when a page handler is registered, so the plugin now registers one and returns the page as-is (also at `/plugins/DaphileTouch/`).
+
 ## [0.1.0] - 2026-11-15
 
 First public preview.
