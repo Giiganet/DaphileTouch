@@ -216,6 +216,9 @@ img { display: block; }
   display: inline-flex; align-items: center; justify-content: center;
 }
 .icon-btn.big { width: 52px; height: 52px; font-size: 24px; color: var(--text); }
+/* 播放键：按状态只显示一个图形（播放三角 / 暂停两竖条） */
+#btn-play .ic-pause, #btn-play.playing .ic-play { display: none; }
+#btn-play.playing .ic-pause { display: block; }
 .icon-btn.on { color: var(--accent); }
 .icon-btn:active { background: var(--hover); }
 .icon-btn:disabled { opacity: .35; }

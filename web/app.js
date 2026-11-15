@@ -34,7 +34,7 @@ function render() {
   const playing = st.mode === "play";
 
   $("player").classList.toggle("off", !on);
-  $("btn-play").textContent = playing ? "⏸" : "▶";
+  $("btn-play").classList.toggle("playing", playing);   // 只切换显示哪个 SVG 图形，不写字符
   $("btn-play").setAttribute("aria-label", playing ? "暂停" : "播放");
   $("btn-shuffle").classList.toggle("on", Number(st["playlist shuffle"]) > 0);
   const rep = Number(st["playlist repeat"]);
@@ -180,7 +180,7 @@ function renderQueue(loop, curIdx) {
     const cls = i === curIdx ? "playing" : i < curIdx ? "past" : "";
     const cid = coverOf(t);
     return `<tr class="${cls}" data-idx="${i}">
-      <td class="num">${i === curIdx ? "▶" : i + 1}</td>
+      <td class="num">${i === curIdx ? "▶\uFE0E" : i + 1}</td>
       <td class="cv">${cid ? `<img src="${LMS.cover(cid, 100)}" alt="" loading="lazy">` : `<span class="ph"></span>`}</td>
       <td>${esc(t.title)}</td><td>${esc(t.artist || "")}</td><td>${esc(t.album || "")}</td>
       <td class="dur">${t.duration ? fmtTime(t.duration) : ""}</td>

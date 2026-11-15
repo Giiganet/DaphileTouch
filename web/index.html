@@ -21,7 +21,7 @@
   function later() { fit(); clearTimeout(t); t = setTimeout(fit, 350); }   // 旋转动画结束后再量一次，取最终尺寸
   fit(); addEventListener("resize", later); addEventListener("orientationchange", later); addEventListener("pageshow", later);
   if (window.visualViewport) visualViewport.addEventListener("resize", later); })();</script>
-<link rel="stylesheet" href="style.css?v=0.3.1">
+<link rel="stylesheet" href="style.css?v=0.3.2">
 </head>
 <body>
 <div class="app" id="app">
@@ -45,7 +45,7 @@
         <span class="ts-track" aria-hidden="true"><span class="ts-knob"></span></span>
         <svg class="ts-moon" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 14.6A8.2 8.2 0 0 1 9.4 4a8.2 8.2 0 1 0 10.6 10.6z"/></svg>
       </button>
-      <div class="app-ver" id="app-ver" aria-label="版本">v0.3.1</div>
+      <div class="app-ver" id="app-ver" aria-label="版本">v0.3.2</div>
     </div>
   </nav>
 
@@ -126,7 +126,16 @@
           <path d="M20.5 6.5v11L12.5 12z"/><path d="M11.5 6.5v11L3.5 12z"/>
         </svg>
       </button>
-      <button class="icon-btn big" id="btn-play" aria-label="播放">▶</button>
+      <button class="icon-btn big" id="btn-play" aria-label="播放">
+        <!-- 播放 / 暂停：画成 SVG（仿 SF Symbols play.fill / pause.fill）。不用 ▶ ⏸ 字符，iPad 会把 ⏸ 画成彩色 emoji。
+             按钮带 .playing 时显示暂停的两竖条，否则显示播放三角 -->
+        <svg class="ic-play" viewBox="0 0 24 24" width="28" height="28" fill="currentColor" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round">
+          <path d="M7 4.5v15l12.5-7.5z"/>
+        </svg>
+        <svg class="ic-pause" viewBox="0 0 24 24" width="28" height="28" fill="currentColor">
+          <rect x="5.5" y="4.5" width="4.5" height="15" rx="1.2"/><rect x="14" y="4.5" width="4.5" height="15" rx="1.2"/>
+        </svg>
+      </button>
       <button class="icon-btn" id="btn-next" aria-label="下一首">
         <!-- 下一首：两个朝右的实心三角（仿 SF Symbols forward.fill） -->
         <svg viewBox="0 0 24 24" width="22" height="22" fill="currentColor" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round">
@@ -196,9 +205,9 @@
 </div>
 
 <div class="toast" id="toast" hidden></div>
-<script src="api.js?v=0.3.1"></script>
-<script src="views.js?v=0.3.1"></script>
-<script src="rhythm.js?v=0.3.1"></script>
-<script src="app.js?v=0.3.1"></script>
+<script src="api.js?v=0.3.2"></script>
+<script src="views.js?v=0.3.2"></script>
+<script src="rhythm.js?v=0.3.2"></script>
+<script src="app.js?v=0.3.2"></script>
 </body>
 </html>
