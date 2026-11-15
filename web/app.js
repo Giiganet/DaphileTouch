@@ -123,6 +123,7 @@ function renderNowPlaying(cur) {
   if (coverId) img.src = LMS.cover(coverId, 300);
   $("np-title").textContent = cur ? cur.title || "未知曲目" : "未在播放";
   $("np-artist").textContent = cur && !JUNK.has(cur.artist || "") ? cur.artist : "";
+  $("np-fmt").innerHTML = cur ? fmtChips(cur).map((x) => `<span>${esc(x)}</span>`).join("") : "";
   if (!cur) { $("np-meta").innerHTML = ""; return; }
   const v = (x) => (x == null || JUNK.has(String(x)) ? "" : String(x));
   const rows = [
@@ -136,34 +137,22 @@ function renderNowPlaying(cur) {
     ["曲号", v(cur.tracknum)],
     ["时长", cur.duration ? fmtTime(cur.duration) : ""],
   ].filter((r) => r[1]);
-  const fmt = fmtRows(cur).filter((r) => r[1]);
-  // 每项包一层 div（dl 里用 div 包 dt/dd 是合法写法）；只有格式类各项加 .fmt 灰色底
-  const row = (cls) => ([k, val]) => `<div class="${cls}"><dt>${k}</dt><dd>${esc(val)}</dd></div>`;
-  $("np-meta").innerHTML = rows.map(row("np-row")).join("") + fmt.map(row("np-row fmt")).join("");
+  $("np-meta").innerHTML = rows.map(([k, val]) => `<dt>${k}</dt><dd>${esc(val)}</dd>`).join("");
 }
 
-/* ---------- 文件格式信息 ----------
-   LMS 的 type 是三字母代号；它的 lossless 字段对 WAV、APE 也报 0，不可靠，所以按格式自己判断。
-   DSD 的 samplerate 是 1 bit 的位率（DSD64 = 2.8224 MHz = 64 × 44.1 kHz）；LMS 不返回声道数。 */
-const FMT_NAME = { flc: "FLAC", wav: "WAV", aif: "AIFF", alc: "ALAC", mp3: "MP3", aac: "AAC", mp4: "AAC", ogg: "Ogg Vorbis",
-  ops: "Opus", dsf: "DSD（DSF）", dff: "DSD（DFF）", wvp: "WavPack", ape: "APE", wma: "WMA" };
-const LOSSLESS = new Set(["flc", "wav", "aif", "alc", "ape", "wvp", "dsf", "dff"]);
-const LOSSY = new Set(["mp3", "aac", "mp4", "ogg", "ops", "wma"]);
-function fmtRows(t) {
+/* ---------- 文件格式小标签：格式  位深  采样率（如 FLAC  16bit  44.1kHz），没有的项不显示 ----------
+   LMS 的 type 是三字母代号；DSD 的 samplerate 是 1 bit 的位率（DSD64 = 2.8224 MHz = 64 × 44.1 kHz）。 */
+const FMT_NAME = { flc: "FLAC", wav: "WAV", aif: "AIFF", alc: "ALAC", mp3: "MP3", aac: "AAC", mp4: "AAC", ogg: "Ogg",
+  ops: "Opus", dsf: "DSD", dff: "DSD", wvp: "WavPack", ape: "APE", wma: "WMA" };
+function fmtChips(t) {
   const type = String(t.type || "");
   const rate = Number(t.samplerate) || 0;
-  const isDsd = type === "dsf" || type === "dff" || rate >= 2822400;
   const bits = Number(t.samplesize) || 0;
-  const m = String(t.bitrate || "").match(/^(\d+)\s*kbps\s*(\w*)/i);
-  const size = Number(t.filesize) || 0;
   return [
-    ["格式", FMT_NAME[type] || type.toUpperCase()],
-    ["编码", LOSSLESS.has(type) ? "无损" : LOSSY.has(type) ? "有损" : ""],
-    ["采样率", !rate ? "" : isDsd ? `DSD${Math.round(rate / 44100)}（${+(rate / 1e6).toFixed(4)} MHz）` : `${+(rate / 1000).toFixed(1)} kHz`],
-    ["位深", bits ? `${bits} bit` : ""],
-    ["码率", m && Number(m[1]) ? `${m[1]} kbps${m[2] ? `（${m[2].toUpperCase()}）` : ""}` : ""],
-    ["文件大小", !size ? "" : size >= 1073741824 ? `${(size / 1073741824).toFixed(2)} GB` : `${(size / 1048576).toFixed(1)} MB`],
-  ];
+    FMT_NAME[type] || type.toUpperCase(),
+    bits ? `${bits}bit` : "",
+    !rate ? "" : rate >= 1e6 ? `${+(rate / 1e6).toFixed(1)}MHz` : `${+(rate / 1000).toFixed(1)}kHz`,
+  ].filter(Boolean);
 }
 
 /* ---------- 把当前播放存成播放列表 ----------
