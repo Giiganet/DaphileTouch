@@ -3,6 +3,14 @@
 All notable changes to this project are documented here.
 Versions follow [Semantic Versioning](https://semver.org/).
 
+## [0.3.3] - 2026-11-15
+
+### Added
+- The track info panel (☰ on the player bar) shows the file format, bit depth and sample rate as small grey tags above the album, e.g. "FLAC 16bit 44.1kHz".
+
+### Fixed
+- In Favorites, swiping a row left removed it at once, so swiping to close the library often deleted a favorite by accident. A left swipe now only reveals a red 移出 (Remove) button, and the favorite is removed only when that button is tapped. Keep swiping left without lifting your finger and the swipe passes to the library, which slides closed as usual.
+
 ## [0.3.2] - 2026-11-15
 
 ### Fixed

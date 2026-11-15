@@ -314,51 +314,110 @@ function swallowClick(box) {
   setTimeout(() => box.removeEventListener("click", stop, true), 400);
 }
 
-/* 向左滑动删除：横向拖动整行，右边露出红底垃圾篓；滑过 96px 松手即删除，不够就弹回。
+/* 向左滑动删除：横向拖动整行，右边露出红底。
+   默认模式（当前播放列表）：滑过 88px 松手即删除，不够就弹回。
+   reveal 模式（喜爱页）：左滑只露出红色「移出」按钮并停住，再点按钮才删除；
+     按钮露满后手指不松开、继续左滑，就交给 over（选曲窗口跟手左移，够远松手关闭窗口）；
+     轻点这一行、点别处、右滑、列表滚动都会收回——误滑不会丢东西。
    rowSel：可滑动的行；onDelete(row) 负责删除并重绘（可返回 Promise）。拖动排序进行中不触发。 */
-function bindSwipe(box, rowSel, onDelete) {
+function bindSwipe(box, rowSel, onDelete, { reveal = false, over = null } = {}) {
   const THRESH = 88, MAX = 110, ELASTIC = 14, START = 10;   // 拉满 88px 可删；最多露出 110px（+14px 弹性）
-  let sw = null;
+  const OPEN = 88;   // reveal 模式停住时露出的按钮宽度；拉过一半松手就停住
+  const HANDOFF = 8;   // 按钮露满后再多拉这么多，才开始拖动页面（让按钮先完整露出一下）
+  let sw = null, open = null;   // open：reveal 模式下当前停住、露出按钮的那一行
   const back = (row) => {
-    row.classList.remove("sw-move", "swipe-arm", "sw-del");
+    if (row === open) open = null;
+    row.classList.remove("sw-move", "swipe-arm", "sw-del", "sw-open", "sw-press");
     row.style.setProperty("--sx", "0px");
     setTimeout(() => { if (!row.classList.contains("sw-move")) { row.classList.remove("swiping"); row.style.removeProperty("--sx"); } }, 220);
   };
+  const close = () => { if (open) back(open); };
+  const remove = (row) => {
+    if (row === open) open = null;
+    row.classList.remove("sw-move", "sw-open", "sw-press");
+    row.classList.add("sw-del");   // 停在原位淡出，不再整行滑出（否则会露出整条红底）
+    Promise.resolve(onDelete(row)).catch(() => {})
+      .finally(() => setTimeout(() => { if (row.isConnected) back(row); }, 2500));   // 删除失败或未重绘就弹回
+  };
+  if (reveal) {
+    // 点列表以外的任何地方（标题栏、关闭钮、播放条……）或列表滚动，都把露出的按钮收回
+    document.addEventListener("pointerdown", (e) => { if (open && !box.contains(e.target)) close(); }, true);
+    // 列表滚动也收回：scroll 不冒泡，真正滚动的是外层容器，所以在 document 上用捕获阶段监听
+    document.addEventListener("scroll", (e) => { if (open && e.target.contains && e.target.contains(open)) close(); }, { capture: true, passive: true });
+  }
   box.addEventListener("pointerdown", (e) => {
     sw = null;
     if (e.button > 0 || S.dragging) return;
+    if (open && !open.isConnected) open = null;   // 列表已重绘
     const row = e.target.closest(rowSel);
-    if (row && box.contains(row)) sw = { row, x: e.clientX, y: e.clientY, dx: 0, on: false, id: e.pointerId };
+    let base = 0;
+    if (open) {
+      if (row !== open) { close(); swallowClick(box); return; }   // 点别的行：只收回，不当成点击
+      base = OPEN;
+      // 「移出」按钮是行右侧露出的红色区域（行已左移，按钮在行框右边）
+      if (e.clientX >= row.getBoundingClientRect().right) {
+        row.classList.add("sw-press");
+        sw = { row, press: true, x: e.clientX, y: e.clientY, id: e.pointerId };
+        return;
+      }
+    }
+    if (row && box.contains(row)) sw = { row, x: e.clientX, y: e.clientY, dx: -base, base, on: false, id: e.pointerId };
   });
   box.addEventListener("pointermove", (e) => {
     if (!sw || e.pointerId !== sw.id) return;
     const dx = e.clientX - sw.x, dy = e.clientY - sw.y;
+    if (sw.press) {   // 按着按钮移动了就不算点按钮
+      if (Math.hypot(dx, dy) > START) { sw.row.classList.remove("sw-press"); sw = null; }
+      return;
+    }
     if (!sw.on) {
       if (S.dragging || Math.abs(dy) > START) { sw = null; return; }   // 竖向移动是滚动或排序
-      if (dx > -START) return;
+      if (sw.base ? Math.abs(dx) <= START : dx > -START) return;   // 已停住的行可左右拖，没停住的只认左滑
       sw.on = true;
       sw.row.classList.add("swiping", "sw-move");
       try { box.setPointerCapture(sw.id); } catch (_) { /* 忽略 */ }
     }
     e.preventDefault();
-    const pull = Math.max(0, -dx);   // 手指向左拉的距离
+    const pull = Math.max(0, sw.base - dx);   // 行向左移的总距离
+    if (over) {   // 行最多左移到按钮露满；超出的部分交给页面
+      const extra = pull - OPEN - HANDOFF;
+      sw.dx = -Math.round(Math.min(pull, OPEN));
+      sw.row.style.setProperty("--sx", sw.dx + "px");
+      if (extra > 0 || sw.over) { sw.over = true; over.drag(-Math.max(0, extra), e.timeStamp); }
+      return;
+    }
     // 超过 MAX 后只有很小的弹性余量，最多再多出 ELASTIC
     const shown = pull <= MAX ? pull : MAX + ELASTIC * (1 - 1 / (1 + (pull - MAX) / 60));
     sw.dx = -Math.round(shown);
     sw.row.style.setProperty("--sx", sw.dx + "px");
-    sw.row.classList.toggle("swipe-arm", -sw.dx >= THRESH);
+    if (!reveal) sw.row.classList.toggle("swipe-arm", -sw.dx >= THRESH);   // 变深红 = 松手就删；reveal 模式松手不删，不变色
   });
   const end = (ok) => (e) => {
     if (!sw || e.pointerId !== sw.id) return;
-    const { row, on, dx } = sw;
+    const { row, on, dx, base, press, over: handed } = sw;
     sw = null;
-    if (!on) return;
+    if (press) {   // 点了「移出」按钮
+      row.classList.remove("sw-press");
+      if (!ok) return;
+      swallowClick(box);
+      return remove(row);
+    }
+    if (!on) {   // 轻点已停住的行：收回，不当成点击
+      if (base) { close(); swallowClick(box); }
+      return;
+    }
     swallowClick(box);
+    if (handed && over.release(ok)) return back(row);   // 页面滑走了（窗口关闭）：这一行复位；没滑走就按下面停住或弹回
+    if (reveal) {
+      if (!ok || -dx < OPEN / 2) return back(row);
+      row.classList.remove("sw-move", "swipe-arm");
+      row.classList.add("sw-open");
+      row.style.setProperty("--sx", -OPEN + "px");
+      open = row;
+      return;
+    }
     if (!ok || -dx < THRESH) return back(row);
-    row.classList.remove("sw-move");
-    row.classList.add("sw-del");   // 停在原位淡出，不再整行滑出（否则会露出整条红底）
-    Promise.resolve(onDelete(row)).catch(() => {})
-      .finally(() => setTimeout(() => { if (row.isConnected) back(row); }, 2500));   // 删除失败或未重绘就弹回
+    remove(row);
   };
   box.addEventListener("pointerup", end(true));
   box.addEventListener("pointercancel", end(false));

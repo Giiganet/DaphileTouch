@@ -605,6 +605,28 @@ const Views = (() => {
 
   /* ---------- 向左滑动关闭选曲窗口：窗口跟着手指左移，拉过窗口宽度 1/4（或快速一甩）松手即关闭，不够就弹回 ----------
      喜爱页的行（左滑是移出喜爱）、分隔条、输入框上不接管；竖向移动留给列表滚动 */
+  /* 选曲窗口跟手左移（x ≤ 0）。窗口自己的左滑、喜爱行露出按钮后继续左滑，都用这一对函数 */
+  let pd = null;
+  function pickDrag(x, t) {
+    const p = document.getElementById("picker");
+    if (!pd) { pd = { x: 0, t: 0, v: 0 }; p.style.transition = "none"; }
+    if (pd.t) pd.v = (x - pd.x) / Math.max(8, t - pd.t);        // 速度 px/ms，负数是向左
+    pd.x = x; pd.t = t;
+    p.style.transform = `translateX(${x}px)`;
+  }
+  /* 松手：拉过窗口宽度 1/4（或快速一甩）就关闭，不够就弹回；返回是否关闭 */
+  function pickRelease(ok) {
+    const p = document.getElementById("picker");
+    if (!pd) return false;
+    const { x, v } = pd;
+    pd = null;
+    if (ok && (-x > p.offsetWidth / 4 || (v < -0.6 && -x > 30))) { showPicker(false, true); return true; }
+    p.style.transition = "transform .2s ease";
+    p.style.transform = "";
+    setTimeout(() => { if (!p.style.transform) p.style.transition = ""; }, 220);
+    return false;
+  }
+
   function bindSwipeClose() {
     const p = document.getElementById("picker");
     const START = 12;
@@ -613,7 +635,7 @@ const Views = (() => {
       g = null;
       if (e.button > 0 || !pickerOpen()) return;
       if (e.target.closest("[data-swipe], #picker-resize, input, textarea, select")) return;
-      g = { x: e.clientX, y: e.clientY, id: e.pointerId, on: false, dx: 0, t: 0, v: 0 };
+      g = { x: e.clientX, y: e.clientY, id: e.pointerId, on: false };
     });
     p.addEventListener("pointermove", (e) => {
       if (!g || e.pointerId !== g.id) return;
@@ -623,24 +645,17 @@ const Views = (() => {
         if (dx > -START || -dx < Math.abs(dy) * 1.5) return;        // 还没确定是向左横滑
         g.on = true;
         try { p.setPointerCapture(g.id); } catch (_) { /* 忽略 */ }
-        p.style.transition = "none";
       }
       e.preventDefault();
-      const x = Math.min(0, dx + START);                           // 扣掉起步的 12px，窗口不会突然一跳
-      if (g.t) g.v = (x - g.dx) / Math.max(8, e.timeStamp - g.t);  // 速度 px/ms，负数是向左
-      g.dx = x; g.t = e.timeStamp;
-      p.style.transform = `translateX(${x}px)`;
+      pickDrag(Math.min(0, dx + START), e.timeStamp);              // 扣掉起步的 12px，窗口不会突然一跳
     });
     const end = (ok) => (e) => {
       if (!g || e.pointerId !== g.id) return;
-      const { on, dx, v } = g;
+      const { on } = g;
       g = null;
       if (!on) return;
       swallowClick(p);                                             // 松手的 click 不当成点按
-      if (ok && (-dx > p.offsetWidth / 4 || (v < -0.6 && -dx > 30))) return showPicker(false, true);
-      p.style.transition = "transform .2s ease";                   // 不够：弹回原位
-      p.style.transform = "";
-      setTimeout(() => { if (!p.style.transform) p.style.transition = ""; }, 220);
+      pickRelease(ok);
     };
     p.addEventListener("pointerup", end(true));
     p.addEventListener("pointercancel", end(false));
@@ -649,12 +664,14 @@ const Views = (() => {
   function init() {
     bindResize();
     bindSwipeClose();
-    // 喜爱页：向左滑动一行即移出喜爱。删后 LMS 会重新编号，所以整页重读
+    // 喜爱页：向左滑动一行先露出红色「移出」按钮，松手就停住，再点按钮才移出喜爱；
+    // 手指不松开继续左滑，就变成拖动选曲窗口（够远松手关闭），不会误删。
+    // 删后 LMS 会重新编号，所以整页重读
     bindSwipe(content(), "li[data-swipe]", (li) => act(async () => {
       await LMS.favDelete(li.dataset.swipe);
       toast(`已从喜爱移除：${li.dataset.title || ""}`);
       if (current && current.view === "favorites") await go("favorites", current.arg);
-    }, "移除失败"));
+    }, "移除失败"), { reveal: true, over: { drag: pickDrag, release: pickRelease } });
     document.getElementById("sidebar").addEventListener("click", (e) => {
       const b = e.target.closest(".nav-item[data-view]");
       if (!b || !TOP.has(b.dataset.view)) return;

@@ -21,7 +21,7 @@
   function later() { fit(); clearTimeout(t); t = setTimeout(fit, 350); }   // 旋转动画结束后再量一次，取最终尺寸
   fit(); addEventListener("resize", later); addEventListener("orientationchange", later); addEventListener("pageshow", later);
   if (window.visualViewport) visualViewport.addEventListener("resize", later); })();</script>
-<link rel="stylesheet" href="style.css?v=0.3.2">
+<link rel="stylesheet" href="style.css?v=0.3.3">
 </head>
 <body>
 <div class="app" id="app">
@@ -45,7 +45,7 @@
         <span class="ts-track" aria-hidden="true"><span class="ts-knob"></span></span>
         <svg class="ts-moon" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 14.6A8.2 8.2 0 0 1 9.4 4a8.2 8.2 0 1 0 10.6 10.6z"/></svg>
       </button>
-      <div class="app-ver" id="app-ver" aria-label="版本">v0.3.2</div>
+      <div class="app-ver" id="app-ver" aria-label="版本">v0.3.3</div>
     </div>
   </nav>
 
@@ -206,9 +206,9 @@
 </div>
 
 <div class="toast" id="toast" hidden></div>
-<script src="api.js?v=0.3.2"></script>
-<script src="views.js?v=0.3.2"></script>
-<script src="rhythm.js?v=0.3.2"></script>
-<script src="app.js?v=0.3.2"></script>
+<script src="api.js?v=0.3.3"></script>
+<script src="views.js?v=0.3.3"></script>
+<script src="rhythm.js?v=0.3.3"></script>
+<script src="app.js?v=0.3.3"></script>
 </body>
 </html>

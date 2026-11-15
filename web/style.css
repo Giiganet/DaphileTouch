@@ -538,3 +538,10 @@ img { display: block; }
 /* 拉够松手：停在原位整体淡出（连同红底），不再整行滑出露出整条红色 */
 .cur-table tbody tr.sw-del { opacity: 0; transition: opacity .18s ease; }
 .list li.sw-del { opacity: 0; transition: transform .2s ease, opacity .18s ease; }
+/* 喜爱页：左滑露出的是文字按钮「移出」，停住等点按；按下时加深 */
+.list li[data-swipe].swiping::after {
+  content: "移出"; display: flex; align-items: center; justify-content: center;
+  overflow: hidden; white-space: nowrap; color: #fff; font-size: 14px; font-weight: 600;
+  background-image: none;
+}
+.list li.sw-press::after { background-color: #d70015; }
