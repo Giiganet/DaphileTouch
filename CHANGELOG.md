@@ -3,6 +3,15 @@
 All notable changes to this project are documented here.
 Versions follow [Semantic Versioning](https://semver.org/).
 
+## [0.4.1] - 2026-11-16
+
+### Added
+- Generic confirm dialog `ask({title, msg, ok, danger, icon})` → Promise<boolean> (`#ask-dlg`, `role=alertdialog`), styled like the app: optional bin / restart icon, red button for destructive actions; Esc, tapping the backdrop or 取消 resolve false, Enter (ignoring IME composition) resolves true.
+
+### Changed
+- Save as playlist: the browser `prompt` is replaced by `#save-dlg` with a cover thumbnail (2×2 mosaic when the queue has 4+ different covers), track count and total length, a pre-selected default name “当前播放 YYYY-MM-DD HH.MM” and a clear button. Existing playlist names are fetched when it opens; a duplicate name shows an orange note and turns 保存 into a red 覆盖 (if the names have not arrived yet, submitting waits for them and stops on a duplicate instead of overwriting). Characters `\ / : * ? " < > |` are flagged and replaced with “-”; an empty name cannot be saved.
+- Clear (keep playing track / clear whole queue) and restart-to-install-plugin-updates now use `ask()` instead of `confirm()`. The restart dialog lists the plugins to install, warns and turns red while music is playing, and re-checks that the update is still pending after confirmation. The app no longer uses `confirm`, `prompt` or `alert`.
+
 ## [0.4.0] - 2026-11-16
 
 ### Added

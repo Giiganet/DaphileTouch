@@ -624,3 +624,67 @@ body.q-adding #cur-list .empty .e-add { display: inline-flex; align-items: cente
 /* 已在当前播放里的曲目：标题、曲序、时长、行首图标一起变灰（心形不变，仍可加入喜爱） */
 #picker .tracks tr.queued td:not(.fav), #picker .tracks tr.queued .sub,
 #picker .list li.queued .grow, #picker .list li.queued .sub, #picker .list li.queued .lead { color: var(--text3); }
+/* 存为播放列表弹窗：放在偏上的位置，iPad 横屏弹出键盘时不被挡住 */
+:root { --warn: #c45c00; }
+:root[data-theme="dark"] { --warn: #ff9f0a; }
+@keyframes dlg-fade { from { opacity: 0; } }
+@keyframes dlg-pop { from { opacity: 0; transform: translateY(-8px) scale(.97); } }
+.modal {
+  position: fixed; inset: 0; z-index: 40;
+  display: flex; justify-content: center; align-items: flex-start; padding-top: max(80px, 11vh);
+  background: rgba(0, 0, 0, .28); animation: dlg-fade .16s ease-out;
+}
+:root[data-theme="dark"] .modal { background: rgba(0, 0, 0, .5); }
+.modal[hidden] { display: none; }
+.dlg {
+  width: 420px; max-width: calc(100vw - 32px); padding: 20px 20px 16px;
+  background: var(--bar-solid); border: 1px solid var(--line); border-radius: 16px;
+  box-shadow: 0 20px 50px rgba(0, 0, 0, .25); animation: dlg-pop .18s ease-out;
+}
+.dlg h2 { margin: 0 0 16px; font-size: 17px; font-weight: 700; text-align: center; }
+.save-row { display: flex; align-items: center; gap: 14px; }
+.save-art {
+  width: 72px; height: 72px; flex: none; border-radius: 8px; overflow: hidden;
+  display: flex; align-items: center; justify-content: center;
+  background: var(--chip-bg); color: var(--text3);
+}
+.save-art.quad { display: grid; grid-template-columns: 1fr 1fr; }
+.save-art img { display: block; width: 100%; height: 100%; object-fit: cover; }
+.save-field { flex: 1; min-width: 0; }
+.save-input { position: relative; }
+.save-input input {
+  width: 100%; height: 40px; padding: 0 34px 0 12px;
+  font: 16px var(--font); color: var(--text); background: var(--bg);
+  border: 1px solid var(--line); border-radius: 10px; outline: none; -webkit-appearance: none;
+}
+.save-input input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--flash); }
+.save-clear {
+  position: absolute; right: 8px; top: 10px; width: 20px; height: 20px; border-radius: 50%;
+  display: inline-flex; align-items: center; justify-content: center;
+  background: var(--text3); color: var(--bg);
+}
+.save-clear[hidden] { display: none; }
+.save-meta { margin-top: 6px; font-size: 12px; color: var(--text2); }
+.save-note { margin: 12px 0 0; font-size: 12px; line-height: 1.45; color: var(--text2); }
+.save-note.warn { color: var(--warn); }
+.save-note[hidden] { display: none; }
+.dlg-btns { display: flex; gap: 10px; margin-top: 18px; }
+.dlg-btns button { flex: 1; height: 42px; border-radius: 10px; font-size: 15px; font-weight: 600; }
+.dlg-btns .ghost { background: var(--chip-bg); color: var(--text); }
+.dlg-btns .primary { background: var(--accent); color: #fff; }
+.dlg-btns .primary.danger { background: var(--danger); }
+.dlg-btns button:disabled { opacity: .4; }
+.dlg-btns button:active { filter: brightness(.92); }
+/* 确认弹窗（清除、重启安装）：图标、标题、说明居中，放在屏幕正中（没有输入框，不用避让键盘） */
+#ask-dlg { align-items: center; padding-top: 0; }
+.dlg.ask { width: 340px; padding-top: 22px; text-align: center; }
+.dlg.ask h2 { margin-bottom: 8px; }
+.ask-icon {
+  width: 46px; height: 46px; margin: 0 auto 12px; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  background: var(--flash); color: var(--accent);
+}
+.ask-icon.danger { background: rgba(255, 59, 48, .14); color: var(--danger); }
+.ask-icon[hidden], .ask-msg[hidden] { display: none; }
+.ask-msg { margin: 0; font-size: 13px; line-height: 1.5; color: var(--text2); white-space: pre-line; overflow-wrap: anywhere; }
+.dlg.ask .dlg-btns { margin-top: 20px; }

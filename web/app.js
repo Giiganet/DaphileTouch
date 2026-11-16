@@ -183,25 +183,110 @@ function fmtChips(t) {
   ].filter(Boolean);
 }
 
-/* ---------- 把当前播放存成播放列表 ----------
-   名称里去掉文件名不允许的字符和冒号（冒号会被 LMS 当成「键:值」参数）；同名先确认再覆盖。 */
+/* ---------- 确认弹窗：代替浏览器自带的 confirm，返回 true（确认）/ false（取消） ----------
+   title 标题；msg 说明（\n 换行）；ok 确认按钮文字；danger 确认按钮和图标用红色；icon 图标（trash / restart）。
+   点「取消」、点弹窗外的暗处或按 Esc 为取消；外接键盘按回车为确认。 */
+const ASK_ICON = {
+  trash: `<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16M9.5 7V4.5h5V7M6 7l1 13h10l1-13M10 11v5.5M14 11v5.5"/></svg>`,
+  restart: `<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M20 12a8 8 0 1 1-2.6-5.9"/><path d="M20 4.5v5h-5"/></svg>`,
+};
+function ask({ title, msg = "", ok = "确定", danger = false, icon = "" }) {
+  const dlg = $("ask-dlg"), b = $("ask-ok"), ic = $("ask-icon");
+  $("ask-title").textContent = title;
+  $("ask-msg").textContent = msg;
+  $("ask-msg").hidden = !msg;
+  ic.innerHTML = ASK_ICON[icon] || "";
+  ic.hidden = !ASK_ICON[icon];
+  ic.classList.toggle("danger", danger);
+  b.textContent = ok;
+  b.classList.toggle("danger", danger);
+  dlg.hidden = false;
+  return new Promise((done) => {
+    const close = (v) => { dlg.hidden = true; document.removeEventListener("keydown", key); done(v); };
+    const key = (e) => {
+      if (e.key === "Escape") close(false);
+      else if (e.key === "Enter" && !e.isComposing) { e.preventDefault(); close(true); }
+    };
+    document.addEventListener("keydown", key);
+    $("ask-cancel").onclick = () => close(false);
+    b.onclick = () => close(true);
+    dlg.onclick = (e) => { if (e.target === dlg) close(false); };
+  });
+}
+
+/* ---------- 把当前播放存成播放列表（自定义弹窗） ----------
+   名称里文件名不允许的字符和冒号（冒号会被 LMS 当成「键:值」参数）换成「-」。
+   打开时取一次已有播放列表的名称：输入同名时弹窗里直接提示，「保存」变成红色「覆盖」，不再另弹确认框。 */
+const BAD_CH = /[\\/:*?"<>|]/;
+const cleanName = (s) => s.replace(new RegExp(BAD_CH, "g"), "-").replace(/\s+/g, " ").trim();
 async function saveQueue() {
-  const n = (S.st && Number(S.st.playlist_tracks)) || 0;
+  const loop = (S.st && S.st.playlist_loop) || [];
+  const n = (S.st && Number(S.st.playlist_tracks)) || loop.length;
   if (!n) return toast("当前播放是空的，没有可保存的曲目");
   const d = new Date(), p2 = (x) => String(x).padStart(2, "0");
-  const def = `当前播放 ${d.getFullYear()}-${p2(d.getMonth() + 1)}-${p2(d.getDate())} ${p2(d.getHours())}.${p2(d.getMinutes())}`;
-  const raw = prompt(`新建播放列表（${n} 首），名称为：`, def);
-  if (raw == null) return;                                   // 取消
-  const name = raw.replace(/[\\/:*?"<>|]/g, "-").replace(/\s+/g, " ").trim();
-  if (!name) return toast("名称不能为空");
+  const dlg = $("save-dlg"), inp = $("save-name"), ok = $("save-ok"), note = $("save-note");
+
+  // 左边的封面：取队列里前 4 张不同的封面拼成 2×2；只有 1–3 张时用第一张；没有封面时显示列表图标
+  const covers = [...new Set(loop.map(coverOf).filter(Boolean))];
+  const art = $("save-art");
+  art.classList.toggle("quad", covers.length >= 4);
+  art.innerHTML = covers.length >= 4 ? covers.slice(0, 4).map((c) => `<img src="${LMS.cover(c, 80)}" alt="">`).join("")
+    : covers.length ? `<img src="${LMS.cover(covers[0], 160)}" alt="">`
+    : `<svg viewBox="0 0 24 24" width="30" height="30" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M4 7h12M4 12h12M4 17h8"/><circle cx="18.5" cy="17" r="2"/><path d="M20.5 17V9.5"/></svg>`;
+  const sec = loop.reduce((s, x) => s + (Number(x.duration) || 0), 0);
+  $("save-meta").textContent = [`${n} 首`, sec ? fmtTime(sec) : ""].filter(Boolean).join(" · ");
+
+  let names = null;   // 已有播放列表名称；取到之前为 null
+  const same = () => { const k = cleanName(inp.value).toLowerCase(); return names && names.find((x) => x.toLowerCase() === k); };
+  const check = () => {
+    const name = cleanName(inp.value), dup = name && same();
+    ok.disabled = !name;
+    ok.textContent = dup ? "覆盖" : "保存";
+    ok.classList.toggle("danger", !!dup);
+    $("save-clear").hidden = !inp.value;
+    const msg = dup ? `已有同名播放列表「${dup}」，覆盖后它原来的内容会被当前播放替换。`
+      : BAD_CH.test(inp.value) ? `名称里的 \\ / : * ? " < > | 会换成「-」。` : "";
+    note.textContent = msg;
+    note.hidden = !msg;
+    note.classList.toggle("warn", !!dup);
+  };
+  const loaded = LMS.playlists().then((r) => { names = (r.playlists_loop || []).map((x) => String(x.playlist)); check(); })
+    .catch(() => { names = []; });
+
+  inp.value = `当前播放 ${d.getFullYear()}-${p2(d.getMonth() + 1)}-${p2(d.getDate())} ${p2(d.getHours())}.${p2(d.getMinutes())}`;
+  check();
+  dlg.hidden = false;
+  inp.focus();
+  inp.select();
+
+  const name = await new Promise((done) => {
+    const close = (v) => { dlg.hidden = true; document.removeEventListener("keydown", key); inp.blur(); done(v); };
+    const submit = async () => {
+      if (ok.disabled) return;
+      if (!names) {   // 名称还没取回：先等它，若发现同名就停在弹窗里显示提示，让用户再点一次「覆盖」
+        await loaded;
+        if (same()) return check();
+      }
+      close(cleanName(inp.value));
+    };
+    // 中文输入法选字时的回车不算提交
+    const key = (e) => {
+      if (e.key === "Escape") close(null);
+      else if (e.key === "Enter" && !e.isComposing && e.keyCode !== 229) { e.preventDefault(); submit(); }
+    };
+    document.addEventListener("keydown", key);
+    inp.oninput = check;
+    $("save-clear").onclick = () => { inp.value = ""; check(); inp.focus(); };
+    $("save-cancel").onclick = () => close(null);
+    ok.onclick = submit;
+    dlg.onclick = (e) => { if (e.target === dlg) close(null); };   // 点弹窗外的暗处 = 取消
+  });
+  if (!name) return;
   await act(async () => {
-    const list = (await LMS.playlists()).playlists_loop || [];
-    const same = list.find((x) => String(x.playlist).toLowerCase() === name.toLowerCase());
-    if (same && !confirm(`播放列表「${same.playlist}」已存在，覆盖它吗？\n（原来的内容会被当前播放替换）`)) return;
     await LMS.savePlaylist(name);
     toast(`已存为播放列表：${name}（${n} 首）`);
     if (typeof Views !== "undefined" && Views.refreshPlaylists) Views.refreshPlaylists();
-  });
+  }, "保存失败");
 }
 
 /* 队列里当前曲目的标记：播放 ▶、暂停 ❙❙、停止 ■。用 SVG 画，避免 iOS 把符号显示成彩色 emoji */
@@ -289,7 +374,12 @@ function bindUpdate() {
   $("upd-box").onclick = async () => {
     if (Upd.since) return;
     const playing = S.st && S.st.mode === "play";
-    if (!confirm(`重启 LMS 安装插件更新？${playing ? "\n正在播放的音乐会中断。" : ""}\n重启约需一分钟，完成后页面自动刷新。`)) return;
+    const what = $("upd-sub").textContent.replace(/\s*·?\s*点此重启 LMS 安装$/, "");   // 如「DaphileTouch 0.4.1」
+    if (!await ask({
+      title: "重启 LMS 安装插件更新？", icon: "restart", ok: "重启", danger: playing,
+      msg: [what && "要安装：" + what, playing && "正在播放的音乐会中断。", "重启约需一分钟，完成后页面自动刷新。"].filter(Boolean).join("\n"),
+    })) return;
+    if (Upd.since) return;   // 弹窗开着时已被别处触发
     Upd.since = Date.now();
     $("upd-box").classList.add("busy");
     $("upd-title").textContent = "正在重启 LMS…";
@@ -572,16 +662,18 @@ function bindPlayer() {
     $("btn-queue").classList.toggle("on", !q.hidden);
   };
   // 正在播放时只清除其他曲目，当前这首保留并继续播放；暂停或停止时清除整个队列
-  $("btn-clear").onclick = () => {
+  $("btn-clear").onclick = async () => {
     const st = S.st || {};
     const n = Number(st.playlist_tracks) || 0;
     if (st.mode === "play" && S.cur) {
       if (n <= 1) return toast("只有正在播放的这一首，没有其他曲目可清除");
-      if (!confirm(`保留正在播放的「${S.cur.title || "当前曲目"}」，清除其余 ${n - 1} 首？`)) return;
+      if (!await ask({ title: "清除其他曲目？", icon: "trash", ok: "清除", danger: true,
+        msg: `保留正在播放的「${S.cur.title || "当前曲目"}」，清除其余 ${n - 1} 首。` })) return;
       S.queueKey = "";
       return act(async () => { const k = await LMS.clearOthers(); toast(`已清除 ${k} 首，正在播放的保留`); }, "清除失败");
     }
-    if (confirm("清除整个播放队列？")) act(LMS.clear);
+    if (await ask({ title: "清除当前播放？", icon: "trash", ok: "清除", danger: true,
+      msg: `当前播放的 ${n} 首会全部移出列表（曲库里的文件不受影响）。` })) act(LMS.clear, "清除失败");
   };
   $("btn-save").onclick = saveQueue;
   $("np-meta").onclick = (e) => { const b = e.target.closest("[data-folder]"); if (b) Views.openFolder(b.dataset.folder); };

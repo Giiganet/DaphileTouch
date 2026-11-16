@@ -21,7 +21,7 @@
   function later() { fit(); clearTimeout(t); t = setTimeout(fit, 350); }   // 旋转动画结束后再量一次，取最终尺寸
   fit(); addEventListener("resize", later); addEventListener("orientationchange", later); addEventListener("pageshow", later);
   if (window.visualViewport) visualViewport.addEventListener("resize", later); })();</script>
-<link rel="stylesheet" href="style.css?v=0.4.0">
+<link rel="stylesheet" href="style.css?v=0.4.1">
 </head>
 <body>
 <div class="app" id="app">
@@ -49,7 +49,7 @@
         <span class="ts-track" aria-hidden="true"><span class="ts-knob"></span></span>
         <svg class="ts-moon" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 14.6A8.2 8.2 0 0 1 9.4 4a8.2 8.2 0 1 0 10.6 10.6z"/></svg>
       </button>
-      <div class="app-ver" id="app-ver" aria-label="版本">v0.4.0</div>
+      <div class="app-ver" id="app-ver" aria-label="版本">v0.4.1</div>
     </div>
   </nav>
 
@@ -211,10 +211,45 @@
   </footer>
 </div>
 
+<!-- 存为播放列表：自定义弹窗（代替浏览器自带的 prompt / confirm） -->
+<div class="modal" id="save-dlg" hidden>
+  <div class="dlg" role="dialog" aria-modal="true" aria-labelledby="save-title">
+    <h2 id="save-title">存为播放列表</h2>
+    <div class="save-row">
+      <div class="save-art" id="save-art"></div>
+      <div class="save-field">
+        <div class="save-input">
+          <input id="save-name" type="text" autocomplete="off" autocapitalize="off" spellcheck="false" enterkeyhint="done" aria-label="播放列表名称">
+          <button class="save-clear" id="save-clear" type="button" aria-label="清空名称"><svg viewBox="0 0 12 12" width="9" height="9" aria-hidden="true"><path d="M2.5 2.5l7 7M9.5 2.5l-7 7" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg></button>
+        </div>
+        <div class="save-meta" id="save-meta"></div>
+      </div>
+    </div>
+    <p class="save-note" id="save-note" hidden></p>
+    <div class="dlg-btns">
+      <button class="ghost" id="save-cancel" type="button">取消</button>
+      <button class="primary" id="save-ok" type="button">保存</button>
+    </div>
+  </div>
+</div>
+
+<!-- 确认弹窗（清除当前播放、重启安装更新）：代替浏览器自带的 confirm -->
+<div class="modal" id="ask-dlg" hidden>
+  <div class="dlg ask" role="alertdialog" aria-modal="true" aria-labelledby="ask-title" aria-describedby="ask-msg">
+    <div class="ask-icon" id="ask-icon" hidden></div>
+    <h2 id="ask-title"></h2>
+    <p class="ask-msg" id="ask-msg" hidden></p>
+    <div class="dlg-btns">
+      <button class="ghost" id="ask-cancel" type="button">取消</button>
+      <button class="primary" id="ask-ok" type="button">确定</button>
+    </div>
+  </div>
+</div>
+
 <div class="toast" id="toast" hidden></div>
-<script src="api.js?v=0.4.0"></script>
-<script src="views.js?v=0.4.0"></script>
-<script src="rhythm.js?v=0.4.0"></script>
-<script src="app.js?v=0.4.0"></script>
+<script src="api.js?v=0.4.1"></script>
+<script src="views.js?v=0.4.1"></script>
+<script src="rhythm.js?v=0.4.1"></script>
+<script src="app.js?v=0.4.1"></script>
 </body>
 </html>
