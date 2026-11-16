@@ -71,6 +71,7 @@ const Views = (() => {
         if (countLabel) countLabel(total);
         const html = renderItems(r, start);
         container.insertAdjacentHTML("beforeend", html);
+        markRows(S.cur);   // 新加载的一页也标出正在播放、已加入的曲目
         start += PAGE;
         if (!total) container.outerHTML = empty("没有内容");
       } catch (e) { toast("加载失败：" + e.message); }
@@ -128,7 +129,7 @@ const Views = (() => {
         addOnce(e.target.closest("[data-addall]"), async () => { await LMS.loadAlbum(albumId, "add"); toast(`已把整张专辑（${tracks.length} 首）加到当前播放末尾`); });
       }
     });
-    markPlaying(S.cur);
+    markRows(S.cur);
   }
 
   /* 详情页顶部的整体操作按钮（如「＋ 整张加入」） */
@@ -216,6 +217,7 @@ const Views = (() => {
       await add();
       toast(`已加入：${title || "1 首"}`);
       flashRow(row);
+      if (row.dataset.id) row.classList.add("queued");   // 不等下一次刷新，立即变灰
     })).finally(() => { delete row.dataset.busy; });
   }
   /* 选曲窗口里的点击：心形加入喜爱；单曲行加入当前播放；other 处理其余点击（进入目录、目录和整张的「＋」） */
@@ -266,6 +268,7 @@ const Views = (() => {
       if (single(it)) return addRow(li, it.add, it.name);
       onPick(it);
     });
+    markRows(S.cur);
   }
 
   /* 左栏条目（艺人 / 播放列表）：data-k 存条目 id，点选后右栏显示详情 */
@@ -410,14 +413,15 @@ const Views = (() => {
     });
     const box = document.getElementById("ls");
     if (box) pager = probeFolders(box);
-    markPlaying(S.cur);
+    markRows(S.cur);
   }
 
-  /* depth 0 = 顶层 Drives（Internal/Network/RAM），depth 1 = 卷（Daphile_Music、NAS）；这两层不显示「＋」 */
+  /* depth 是正在打开的这一层：0 = 文件夹首页（列出 Internal/Network/RAM Drives），1 = 打开磁盘（列出卷），
+     2 = 打开卷本身（如 Daphile_Music、NAS），3 起才是卷里的文件夹。磁盘和卷不显示「＋」 */
   async function folders(folderId, name, depth = 0, net = false) {
     const r = await LMS.folder(folderId);
-    // 目录里直接有曲目 → 当作专辑显示（磁盘和卷那两层除外）
-    if (depth >= 2 && (r.folder_loop || []).some((f) => f.type === "track")) {
+    // 卷里的文件夹直接放着曲目 → 当作专辑显示；卷本身（根目录散放几首歌也一样）仍按文件夹列出
+    if (depth >= 3 && (r.folder_loop || []).some((f) => f.type === "track")) {
       return albumFolder(folderId, name, r.folder_loop, depth, net);
     }
     const items = (r.folder_loop || []).map((f) => {
@@ -427,9 +431,11 @@ const Views = (() => {
       const kind = sys ? (isNet ? "net" : "drive")
         : isDir ? "folder" : f.type === "track" ? "track" : f.type === "playlist" ? "playlist" : "other";
       return {
-        name: f.filename, id: f.id, type: f.type, more: isDir, net: isNet,
+        // 曲目去掉扩展名；musicfolder 给的时长是「6:40」这样的文字，要先换成秒
+        name: f.type === "track" ? f.filename.replace(/\.[^.]+$/, "") : f.filename,
+        id: f.id, type: f.type, more: isDir, net: isNet,
         lead: lead(kind, isDir && !sys ? f.id : ""),
-        sub: f.type === "track" && f.duration ? fmtTime(f.duration) : "",
+        sub: f.type === "track" && secOf(f.duration) ? fmtTime(secOf(f.duration)) : "",
         track: f.type === "track",
         add: isDir && !sys ? () => LMS.loadFolder(f.id, "add") : null,
       };
@@ -519,6 +525,7 @@ const Views = (() => {
       if (li.dataset.artist) open("artist", { id: li.dataset.artist, name: li.dataset.name });
       else if (li.dataset.album) open("album", li.dataset.album);
     });
+    markRows(S.cur);
   }
 
   /* ---------- 路由 ---------- */
@@ -616,10 +623,13 @@ const Views = (() => {
     go(view);
   }
 
-  /* 正在播放的行高亮 */
-  function markPlaying(cur) {
+  /* 曲目行状态：正在播放的那首高亮；其余已在当前播放列表里的（只在选曲窗口）变灰 */
+  function markRows(cur) {
     const id = cur && String(cur.id);
+    const inQ = new Set(((S.st && S.st.playlist_loop) || []).map((x) => String(x.id)));
     document.querySelectorAll(".tracks tr[data-id]").forEach((tr) => tr.classList.toggle("playing", tr.dataset.id === id));
+    document.querySelectorAll("#picker tr[data-id], #picker li[data-id]").forEach((el) =>
+      el.classList.toggle("queued", el.dataset.id !== id && inQ.has(el.dataset.id)));
   }
 
   /* ---------- 分隔条：拖动调节选曲窗口宽度（「当前播放」跟着让位），记在 localStorage，双击恢复默认 ---------- */
@@ -763,5 +773,5 @@ const Views = (() => {
     if (pickerOpen() && rootView === "playlists") { stack.length = 0; go("playlists"); }
   }
 
-  return { init, markPlaying, refreshPlaylists, openFolder };
+  return { init, markRows, refreshPlaylists, openFolder };
 })();

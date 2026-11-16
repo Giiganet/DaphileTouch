@@ -3,6 +3,18 @@
 All notable changes to this project are documented here.
 Versions follow [Semantic Versioning](https://semver.org/).
 
+## [0.4.0] - 2026-11-16
+
+### Added
+- Library: tracks already in the current queue are shown in grey (`.queued`, `--text3`) in album pages, folders, Songs (including pages loaded later) and search results; the playing track keeps its blue highlight and the heart stays active. A row turns grey right after a successful add and is re-marked on every status poll, so removed tracks return to normal. `Views.markPlaying` is renamed `Views.markRows`.
+
+### Removed
+- Auto-play on add (added in 0.3.8). Adding music only appends to the end of the queue in every state (empty, stopped, paused, powered off); it never jumps to the new tracks or powers the player on, so the queue always plays in order.
+
+### Fixed
+- Folders: a volume root (open depth 2, e.g. Daphile_Music) with loose tracks was shown as a mixed “多位艺人” album page with its sub-folders below the track table. Album pages now start at depth 3 (folders inside a volume); volumes are always plain folder lists.
+- Folders: loose tracks showed 0:00 because musicfolder returns durations as text (“6:40”); they are now converted to seconds, and the file extension is dropped from track names.
+
 ## [0.3.9] - 2026-11-16
 
 ### Removed

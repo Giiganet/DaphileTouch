@@ -621,3 +621,6 @@ body.q-adding #cur-list .empty .e-add { display: inline-flex; align-items: cente
   position: absolute; z-index: 1; top: env(safe-area-inset-top, 0px); left: 0; right: 56px;
   height: 52px; padding: 0 4px 0 6px;
 }
+/* 已在当前播放里的曲目：标题、曲序、时长、行首图标一起变灰（心形不变，仍可加入喜爱） */
+#picker .tracks tr.queued td:not(.fav), #picker .tracks tr.queued .sub,
+#picker .list li.queued .grow, #picker .list li.queued .sub, #picker .list li.queued .lead { color: var(--text3); }
