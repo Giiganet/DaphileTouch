@@ -411,7 +411,7 @@ img { display: block; }
 .picker .album-head .art { width: 160px; height: 160px; }
 .picker .album-head h2 { font-size: 19px; }
 .picker .album-head .artist { font-size: 15px; }
-.picker .actions { margin: 4px 0 10px; }
+.picker .actions { margin: 12px 0 10px; }   /* 整张加入按钮离格式标签再远一点 */
 
 /* 目录行尾「＋」（文件夹、收藏夹、专辑目录）：灰圆 24px，点击区向外扩 8px，手指好点 */
 .add-btn {
@@ -594,3 +594,19 @@ body.q-adding #cur-list .empty .e-add { display: inline-flex; align-items: cente
 
 /* 当前播放左滑：垃圾篓始终在红色按钮正中（按钮最宽 76px，拉满即停） */
 .cur-table tbody tr.swiping > td:last-child::after { background-position: center; }
+
+/* 侧栏「播放列表」分组：灰色小标题换成一条细横线，两端留空，不顶头 */
+.nav-sep { height: 1px; margin: 12px 10px 8px; background: color-mix(in srgb, var(--text3) 40%, transparent); }
+
+/* 搜索页：搜索框加长，放在顶部正中。左右两栏等宽（左放标题，右放关闭键），中间一栏最多 400px，窗口窄时自动缩短 */
+.picker.is-search .picker-head {
+  display: grid; grid-template-columns: minmax(56px, 1fr) minmax(0, 400px) minmax(56px, 1fr);
+  padding: 0 6px;
+}
+.picker.is-search .pick-cat { grid-column: 1; padding-left: 10px; }
+.picker.is-search .picker-head .pick-count { display: none; }
+.picker.is-search .filter { grid-column: 2; width: 100%; min-width: 0; }
+.picker.is-search #btn-pick-close { grid-column: 3; justify-self: end; }
+
+/* 「存为播放列表」靠近「清除」：两键间距 10px → 4px（触控区不重叠） */
+.topbar #btn-save { margin-right: -6px; }

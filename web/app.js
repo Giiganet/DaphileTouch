@@ -26,15 +26,31 @@ async function act(fn, errMsg = "操作失败") {
 /* ---------- 加入中：当前播放标题行转圈，曲目进入列表后消失 ----------
    整张加入要等 LMS 处理完才返回，会有几秒空白；这期间显示「正在加入…」。
    命令返回后，等轮询看到 playlist_timestamp 变化（曲目已进列表）再隐藏，最多再等 5 秒兜底。 */
-const Adding = { n: 0, ts: "", until: 0 };
+const Adding = { n: 0, ts: "", until: 0, auto: false };
 const showAdding = (on) => { const el = $("cur-adding"); if (el) el.hidden = !on; document.body.classList.toggle("q-adding", on); };
 async function addAct(fn, errMsg = "加入失败") {
   if (!Adding.n && !Adding.until) Adding.ts = S.st ? String(S.st.playlist_timestamp) : "";
   Adding.n++;
   Adding.until = 0;
   showAdding(true);
+  /* 列表里没有正在播放的曲目（空列表、停止或暂停——界面没有停止键，暂停就当停止）时，加入后从新加入的第一首开始播放。
+     新加入的第一首的位置 = 加入前的曲目数。同一时间只让第一次加入决定播放，连着加几张不会互相抢。 */
+  let playFrom = -1, st = S.st;
+  if (!Adding.auto) {
+    if (!st || Date.now() - S.polledAt > 1500) { try { st = await LMS.status(); } catch (_) { /* 用上次轮询的状态 */ } }
+    if (st && st.mode !== "play") { playFrom = Number(st.playlist_tracks) || 0; Adding.auto = true; }
+  }
   let ok = true;
   try { await fn(); } catch (e) { ok = false; toast(errMsg + "：" + e.message); }
+  if (playFrom >= 0) {
+    if (ok) {
+      try {
+        if (Number(st.power) !== 1) await LMS.power(1);
+        await LMS.jump(playFrom);
+      } catch (e) { toast("开始播放失败：" + e.message); }
+    }
+    Adding.auto = false;
+  }
   Adding.n--;
   if (!Adding.n) { if (ok) Adding.until = Date.now() + 5000; else showAdding(false); }
   setTimeout(poll, 150);

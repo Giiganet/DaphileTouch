@@ -34,12 +34,14 @@ const Views = (() => {
   const pickList = () => document.getElementById("pick-list");
   const TWO = new Set(["artists", "playlists"]);
   const CAT = { albums: "专辑", recent: "最近添加", artists: "艺人", songs: "歌曲",
-    folders: "文件夹", playlists: "播放列表", favorites: "喜爱", search: "搜索" };
+    folders: "文件夹", playlists: "播放列表", favorites: "我的喜爱", search: "搜索" };
   let listPager = null;      // 左栏的分页加载器
   function setCols(view) {
     document.querySelector(".picker-cols").classList.toggle("one", !TWO.has(view));
     document.getElementById("pick-cat").textContent = CAT[view] || "";
     document.getElementById("pick-count").textContent = "";
+    // 从侧栏「搜索」进来时，搜索框加长放到顶部正中；其他分类里输入查找时不跟着跳位置
+    document.getElementById("picker").classList.toggle("is-search", rootView === "search");
     if (listPager) { listPager.stop(); listPager = null; }
     pickList().innerHTML = "";
     pickList().scrollTop = 0;
@@ -294,6 +296,8 @@ const Views = (() => {
     track: '<path d="M10 17.5V4.5l9-1.75v3.5L10 8"/><circle cx="7.25" cy="17.6" r="2.75"/>',
     playlist: '<path d="M3.5 6h12M3.5 10.5h12M3.5 15h7.5M18.5 17.5V8.25l3-0.9"/><circle cx="16.25" cy="17.6" r="2.25"/>',
     other: '<path d="M6 2.75h8l4.5 4.5v14H6zM14 2.75v4.5h4.5"/>',
+    artist: '<rect x="9" y="2.75" width="6" height="11.5" rx="3"/><path d="M5.75 11a6.25 6.25 0 0 0 12.5 0M12 17.25v3.5M8.75 20.75h6.5"/>',
+    song: '<path d="M9 17.5V5.2l10-2.2v12.3"/><circle cx="6.6" cy="17.6" r="2.5"/><circle cx="16.6" cy="15.4" r="2.5"/>',
   };
   const svgOf = (k) => `<svg class="row-ico" viewBox="0 0 24 24" aria-hidden="true">${ICO[k]}</svg>`;
   const lead = (k, probe) => `<span class="lead lead-${k}"${probe ? ` data-probe="${probe}"` : ""}>${svgOf(k)}</span>`;
@@ -501,10 +505,15 @@ const Views = (() => {
     const al = r.albums_loop || [], ar = r.contributors_loop || [], tr = r.tracks_loop || [];
     if (!al.length && !ar.length && !tr.length) return reset(empty(`没有找到“${term}”`));
     content().innerHTML = `
-      ${ar.length ? `<div class="section-h">艺人</div><ul class="list">${ar.map((a) => `<li data-artist="${a.contributor_id}" data-name="${esc(a.contributor)}"><div class="grow">${esc(a.contributor)}</div><span style="color:var(--text3)">›</span></li>`).join("")}</ul>` : ""}
-      ${al.length ? `<div class="section-h">专辑</div><ul class="list">${al.map((a) => `<li data-album="${a.album_id}"><div class="grow">${esc(a.album)}</div><span style="color:var(--text3)">›</span></li>`).join("")}</ul>` : ""}
-      ${tr.length ? `<div class="section-h">歌曲</div><ul class="list">${tr.map((t) => `<li data-id="${t.track_id}" data-title="${esc(t.track)}"><div class="grow">${esc(t.track)}</div>${favBtn()}</li>`).join("")}</ul>` : ""}`;
+      ${ar.length ? `<div class="section-h">艺人</div><ul class="list">${ar.map((a) => `<li data-artist="${a.contributor_id}" data-name="${esc(a.contributor)}">${lead("artist")}<div class="grow">${esc(a.contributor)}</div><span style="color:var(--text3)">›</span></li>`).join("")}</ul>` : ""}
+      ${al.length ? `<div class="section-h">专辑</div><ul class="list">${al.map((a) => `<li data-album="${a.album_id}" data-name="${esc(a.album)}">${lead("disc")}<div class="grow">${esc(a.album)}</div>${plusBtn(`data-add="${a.album_id}"`)}<span style="color:var(--text3)">›</span></li>`).join("")}</ul>` : ""}
+      ${tr.length ? `<div class="section-h">歌曲</div><ul class="list">${tr.map((t) => `<li data-id="${t.track_id}" data-title="${esc(t.track)}">${lead("song")}<div class="grow">${esc(t.track)}</div>${favBtn()}</li>`).join("")}</ul>` : ""}`;
     bindTracks((e) => {
+      const ab = e.target.closest("[data-add]");
+      if (ab) {   // 专辑行的「＋」：整张加到当前播放末尾，不进入专辑
+        const nm = ab.closest("li").dataset.name;
+        return addOnce(ab, async () => { await LMS.loadAlbum(ab.dataset.add, "add"); toast(`已加入：${nm}`); flashDone(ab); });
+      }
       const li = e.target.closest("li");
       if (!li) return;
       if (li.dataset.artist) open("artist", { id: li.dataset.artist, name: li.dataset.name });

@@ -3,6 +3,17 @@
 All notable changes to this project are documented here.
 Versions follow [Semantic Versioning](https://semver.org/).
 
+## [0.3.8] - 2026-11-16
+
+### Added
+- Auto-play on add: when the player is not playing (empty queue, stopped or paused; the UI has no stop button), any add starts playback at the first newly added track (`playlist index <previous length>`), powering the player on first if needed. Adds made while one is still pending jump only once.
+- Search results: leading icons that match the sidebar (artist microphone, album disc, song note); section headings have none. Album results get a ＋ button that adds the whole album with the same spinner, double-add guard and auto-play, staying on the search page.
+
+### Changed
+- Search page: the search box is centred in the library header (three-column grid, up to 400px wide, shrinking with the library width). Other categories keep the small right-aligned filter.
+- Sidebar: the grey “播放列表” group heading is replaced by an inset separator line; “所有播放列表” → “播放列表”, “喜爱” → “我的喜爱” (library title too).
+- Album header ＋ 整张加入 moved 8px lower (margin-top 4px → 12px); the save-as-playlist button is 6px closer to the clear button.
+
 ## [0.3.7] - 2026-11-15
 
 ### Added
