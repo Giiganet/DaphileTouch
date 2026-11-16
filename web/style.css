@@ -610,3 +610,14 @@ body.q-adding #cur-list .empty .e-add { display: inline-flex; align-items: cente
 
 /* 「存为播放列表」靠近「清除」：两键间距 10px → 4px（触控区不重叠） */
 .topbar #btn-save { margin-right: -6px; }
+
+/* 选曲窗口右上角不再放查找框；只有「搜索」页保留（居中的长搜索框） */
+.picker:not(.is-search) .filter { display: none; }
+
+/* 文件夹详情：「‹ 文件夹名  N 首」这一行上移到窗口顶部，顶替「文件夹 N 项」；右侧留出关闭键 */
+.picker.head-up .picker-head > .pick-cat,
+.picker.head-up .picker-head > .pick-count { visibility: hidden; }
+.picker.head-up .detail-head {
+  position: absolute; z-index: 1; top: env(safe-area-inset-top, 0px); left: 0; right: 56px;
+  height: 52px; padding: 0 4px 0 6px;
+}

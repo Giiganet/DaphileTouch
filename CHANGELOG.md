@@ -3,6 +3,14 @@
 All notable changes to this project are documented here.
 Versions follow [Semantic Versioning](https://semver.org/).
 
+## [0.3.9] - 2026-11-16
+
+### Removed
+- The 查找 filter box in the library header is hidden in every category except Search, which keeps its centred search box. The in-place album filter in Albums no longer has an entry point.
+
+### Changed
+- Folders: below the top level, the detail row (‹ back, folder name, track count) moves up into the library header in place of “文件夹 N 项”; the close button stays at the top right and the content starts 44px higher. Artist and album details are unchanged.
+
 ## [0.3.8] - 2026-11-16
 
 ### Added

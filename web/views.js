@@ -547,6 +547,8 @@ const Views = (() => {
     const va = document.getElementById("view-act"); va.innerHTML = ""; va.onclick = null;
     if (TOP.has(view)) setCols(view);   // 换分类时重设一栏/两栏；进入详情时左栏保持不动
     document.getElementById("btn-back").hidden = !stack.length;
+    // 文件夹里往下走时，「‹ 文件夹名」这一行上移，顶替窗口顶部的「文件夹 N 项」
+    document.getElementById("picker").classList.toggle("head-up", rootView === "folders" && stack.length > 0);
     syncHead();
     try { await ROUTES[view](arg); } catch (e) { reset(empty("加载失败：" + e.message)); }
   }
