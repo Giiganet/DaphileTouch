@@ -773,5 +773,5 @@ const Views = (() => {
     if (pickerOpen() && rootView === "playlists") { stack.length = 0; go("playlists"); }
   }
 
-  return { init, markRows, refreshPlaylists, openFolder };
+  return { init, markRows, refreshPlaylists, openFolder, pickerOpen, closePicker: () => showPicker(false) };
 })();

@@ -158,8 +158,11 @@ img { display: block; }
 /* 选曲窗口左栏（播放列表）较窄：行首图标缩小到 30px */
 .pick-list li .lead { width: 30px; height: 30px; border-radius: 6px; }
 .pick-list li .lead .row-ico { width: 18px; height: 18px; }
-/* 点按反馈：灰色（隔行）底色画在单元格上，所以要连单元格一起加深，否则灰色行被点时看不出变化 */
-.list li:active, .tracks tbody tr:active, .tracks tbody tr:active > td { background: var(--hover); }
+/* 点按反馈：灰色（隔行）底色画在单元格上，所以要连单元格一起加深，否则灰色行被点时看不出变化。
+   只给手指触摸用（hover: none，即 iPad）；鼠标已有悬停背景，按下不再加深，双击时就不会深浅闪两下 */
+@media (hover: none) {
+  .list li:active, .tracks tbody tr:active, .tracks tbody tr:active > td { background: var(--hover); }
+}
 /* 点单曲加入当前播放成功：整行闪一下浅浅的强调色 */
 :root { --flash: rgba(10, 122, 255, .18); }
 :root[data-theme="dark"] { --flash: rgba(59, 155, 255, .26); }
@@ -275,14 +278,19 @@ img { display: block; }
 .lcd-time.vu-on.na .vu { display: none; }
 .lcd-time.vu-on.na .vu-na { display: flex; visibility: visible; }
 .player.off .lcd { opacity: .45; }
-/* 播放条变窄（窗口变小或右侧详情打开）：脚本按中间那段的可用宽度逐级加类。
+/* 播放条变窄（窗口变小或右侧详情打开）：脚本按中间那段的可用宽度逐级加类。左侧 5 个播放按钮始终不动。
    narrow：放不下「时间 + 进度条（频谱）」，整组隐藏（大频谱在播放条上方，不受影响）；
-   tiny：连封面也放不下，封面隐藏，只留播放按钮和右侧工具按钮 */
+   tiny：曲名也放不下，隐藏曲名、只留封面，封面两侧间距收到 4px、右侧内边距收到 8px（这是播放条的最小状态，
+         Safari 最窄窗口时播放条约 390px，正好放得下）；
+   mini：保险用，连封面都放不下时再隐藏封面 */
 .player.narrow .lcd-time { display: none; }
-.player.tiny .lcd { display: none; }
-/* 最窄时按钮也收紧一点，免得右侧按钮挤出播放条 */
-.player.tiny { gap: 6px; }
-.player.tiny .transport .icon-btn:not(.big) { width: 38px; }
+.player.tiny .lcd-text { display: none; }
+.player.tiny { gap: 4px; padding-right: 8px; }
+.player.mini .lcd { display: none; }
+/* 窗口窄到打开详情后连只留按钮的播放条都放不下：隐藏详情按钮（详情同时收起），见 app.js fitPlayer */
+.player.noq #btn-queue { display: none; }
+/* 右侧工具组（详情、AirPlay、喇叭）始终贴右：中间那段（.lcd）被隐藏时，靠 margin-left:auto 把它推到最右 */
+.player .tools { margin-left: auto; }
 /* 大频谱：浮在播放条上方，左右各比播放条缩进 48px，最宽 800px（iPad 1080 横屏、详情关时的宽度），
    窗口再宽只在两边加留白、居中，频谱本身不再拉伸；在小格频谱上按住往上拖出来，按住它往下滑收回。
    拖动过程中由脚本直接改 transform / opacity 跟手，松手后加 .big-on 或去掉，靠 transition 落位 */
@@ -537,7 +545,7 @@ body.bigvu-open .picker { bottom: calc(226px + env(safe-area-inset-bottom, 0px))
 }
 .device-list { list-style: none; margin: 0; padding: 0; }
 .device-list li { display: flex; align-items: center; gap: 12px; min-height: 48px; padding: 0 10px; border-radius: 12px; cursor: pointer; }
-.device-list li:active { background: var(--hover); }
+@media (hover: none) { .device-list li:active { background: var(--hover); } }   /* 同上：只给触摸 */
 .device-list .dev-ico { width: 24px; color: var(--text2); display: flex; justify-content: center; flex: none; }
 .device-list .dev-name { flex: 1; min-width: 0; font-size: 15px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .device-list .dev-name small { margin-left: 6px; font-size: 12px; color: var(--text3); }
@@ -731,3 +739,18 @@ body.q-adding #cur-list .empty .e-add { display: inline-flex; align-items: cente
 .ask-icon[hidden], .ask-msg[hidden] { display: none; }
 .ask-msg { margin: 0; font-size: 13px; line-height: 1.5; color: var(--text2); white-space: pre-line; overflow-wrap: anywhere; }
 .dlg.ask .dlg-btns { margin-top: 20px; }
+
+/* ---------- 鼠标悬停高亮（app.js bindHoverGlow）----------
+   盖在行上的一块半透明圆角浅底，跟着鼠标在行间滑动；不挡点击。各滚动区域要作为它的定位参照 */
+/* 与斑马纹（--row）同一冷灰色系、比它浅：盖在白行上比斑马纹浅一档，盖在斑马纹行上再加深一点点 */
+:root { --glow: rgba(60, 60, 100, .035); }
+:root[data-theme="dark"] { --glow: rgba(210, 210, 230, .05); }
+#cur-list, #content, #pick-list, #sidebar, #device-list, #dev-menu-list { position: relative; }
+.hover-glow {
+  position: absolute; left: 0; top: 0; z-index: 3; pointer-events: none;
+  border-radius: 8px; background: var(--glow); opacity: 0;
+  transition: transform .16s cubic-bezier(.25, .8, .35, 1), width .16s ease, height .16s ease, opacity .12s ease;
+}
+.hover-glow.on { opacity: 1; }
+.hover-glow.jump { transition: opacity .12s ease; }
+@media (prefers-reduced-motion: reduce) { .hover-glow { transition: opacity .12s ease; } }

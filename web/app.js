@@ -674,6 +674,7 @@ function bindPlayer() {
     setTimeout(() => setQueue(false), 210);
   };
   $("btn-queue").onclick = () => { if (q.hidden) setQueue(true); else closeQueue(); };
+  S.closeQueue = closeQueue;   // fitPlayer 在窗口太窄放不下详情时调用
   /* 在详情上向右滑：面板跟着手指右移，拉过面板宽度 1/4（或快速一甩）松手即收起，不够就弹回；竖向移动留给滚动 */
   {
     const START = 12;
@@ -736,6 +737,17 @@ function bindPlayer() {
     S.queueKey = "";   // 下一次轮询按 LMS 的新队列重绘
     return act(() => LMS.deleteAt(row.dataset.idx), "移除失败");
   });
+  /* 选曲窗口打开时，在当前播放列表里按下任何地方（鼠标或手指）：选曲窗口缩回。
+     这一下只用来收起窗口，不播放、不开始拖动或滑动删除，免得误点切歌；收起后再点才生效 */
+  $("cur-list").addEventListener("pointerdown", (e) => {
+    if (typeof Views === "undefined" || !Views.pickerOpen()) return;
+    Views.closePicker();
+    S.pickerClosedAt = Date.now();
+    e.stopPropagation();
+  }, true);
+  $("cur-list").addEventListener("click", (e) => {
+    if (Date.now() - (S.pickerClosedAt || 0) < 800) { e.stopPropagation(); e.preventDefault(); S.pickerClosedAt = 0; }
+  }, true);
   $("cur-list").onclick = (e) => {
     if (S.justDragged) return;   // 刚拖完松手产生的点击，不当作「播放这首」
     const tr = e.target.closest("tr[data-idx]");
@@ -921,10 +933,11 @@ function bindPlayer() {
    可用宽度 = 播放条内宽 − 左侧播放按钮组 − 右侧工具按钮组 − 两处间距 */
 function fitPlayer() {
   const p = $("player"), tr = p.querySelector(".transport"), tl = p.querySelector(".tools"), txt = p.querySelector(".lcd-text");
-  const NEED_TIME = 44 + 10 + 56 + 10 + 140;   // 封面 + 间距 + 曲名至少 56 + 间距 + 时间/进度条至少 140，才显示时间组
-  const NEED_COVER = 44;              // 封面本身
-  /* .tiny 会收窄按钮和间距，若直接按当前尺寸量，收窄后空间又「够了」→ 去掉 .tiny → 又不够 → 来回闪。
-     所以每次都先去掉 .tiny、按未收紧的尺寸量，再决定；另留 8px 回差，拖动窗口到临界点也不抖。 */
+  const COVER = 44, TINY_GAP = 4, TINY_PADR = 8;   // 最小状态（.tiny）的间距和右内边距，与 style.css 一致
+  const NEED_TIME = COVER + 10 + 56 + 10 + 140;   // 封面 + 间距 + 曲名至少 56 + 间距 + 时间/进度条至少 140，才显示时间组
+  const NEED_TITLE = COVER + 10 + 28;             // 封面 + 间距 + 曲名至少一个字和省略号，才显示曲名
+  /* 量之前先去掉 .tiny/.mini，按正常间距量（否则收紧间距后空间又「够了」→ 去掉 → 又不够 → 来回闪）；另留 8px 回差。
+     左侧播放按钮、右侧工具按钮的宽度都不随这些状态变化，只有中间那段在变 */
   const HYS = 8;
   const ttl = $("lcd-title"), mc = document.createElement("canvas").getContext("2d");
   const oneChar = () => {
@@ -932,16 +945,37 @@ function fitPlayer() {
     const cs = getComputedStyle(ttl); mc.font = cs.fontWeight + " " + cs.fontSize + " " + cs.fontFamily;
     return Math.ceil(mc.measureText(Array.from(t)[0]).width + mc.measureText("\u2026").width);
   };
+  /* 播放条最小状态 = 播放按钮 + 封面 + 工具按钮（.tiny）。若打开详情后连这个最小状态都放不下，
+     就收起详情并隐藏详情按钮（.noq）；窗口放宽到能放下时再显示。按「详情打开时」的播放条宽度算，
+     用未隐藏时的详情按钮宽度，判断不受 .noq / 详情开关本身影响；同样留 8px 回差 */
+  const qb = $("btn-queue"), qp = $("queue");
+  let qbW = qb.offsetWidth || 36;
+  const fitQueue = (cs, trW, tlW) => {
+    const had = p.classList.contains("noq");
+    if (!had && qb.offsetWidth) qbW = qb.offsetWidth;
+    const qw = parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--queue-w")) || 260;
+    const open = !qp.hidden && !qp.classList.contains("closing");
+    const openW = p.clientWidth - (open ? 0 : qw);                       // 详情打开时播放条的内框宽
+    const need = parseFloat(cs.paddingLeft) + TINY_PADR
+      + trW + TINY_GAP + COVER + TINY_GAP + tlW + (had ? qbW : 0) + 1;   // +1 抵消小数取整
+    const noq = openW < need + (had ? HYS : 0);
+    p.classList.toggle("noq", noq);
+    if (noq && open && S.closeQueue) S.closeQueue();
+  };
   const fit = () => {
-    const wasNarrow = p.classList.contains("narrow"), wasTiny = p.classList.contains("tiny");
-    if (wasTiny) p.classList.remove("tiny");
+    const was = { narrow: p.classList.contains("narrow"), tiny: p.classList.contains("tiny"), mini: p.classList.contains("mini") };
+    p.classList.remove("tiny", "mini");
     const cs = getComputedStyle(p);
     const inner = p.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight);
     const gap = parseFloat(cs.columnGap || cs.gap) || 12;
-    const room = inner - tr.offsetWidth - tl.offsetWidth - gap * 2;
-    p.classList.toggle("narrow", room < NEED_TIME + (wasNarrow ? HYS : 0));
-    p.classList.toggle("tiny", room < NEED_COVER + (wasTiny ? HYS : 0));
-    /* 曲目名被挤到最后一个字也显示不出（标题宽度 < 首字 + 省略号，或封面标题整段隐藏）时，大频谱也关掉 */
+    const trW = tr.offsetWidth, tlW = tl.offsetWidth;
+    const room = inner - trW - tlW - gap * 2;                            // 中间那段（.lcd）能分到的宽度
+    const roomTiny = room + (gap - TINY_GAP) * 2 + (parseFloat(cs.paddingRight) - TINY_PADR);   // 收紧间距和右内边距后能分到的宽度
+    p.classList.toggle("narrow", room < NEED_TIME + (was.narrow ? HYS : 0));
+    p.classList.toggle("tiny", room < NEED_TITLE + (was.tiny ? HYS : 0));
+    p.classList.toggle("mini", roomTiny < COVER + (was.mini ? HYS : 0));
+    fitQueue(cs, trW, tlW);
+    /* 曲名被挤到最后一个字也显示不出（标题宽度 < 首字 + 省略号，或曲名已隐藏）时，大频谱也关掉 */
     if (Rhythm.big && (p.classList.contains("tiny") || txt.clientWidth < oneChar())) Rhythm.setBig(false);
   };
   fit();
@@ -949,8 +983,66 @@ function fitPlayer() {
   else window.addEventListener("resize", fit);
 }
 
+/* 鼠标悬停高亮：鼠标在列表里移动时，指到的那一行出现一块圆角浅底，并随鼠标在行间平滑滑动（仿 macOS）。
+   每个滚动区域放一块 .hover-glow（绝对定位，盖在行上、半透明、不挡点击），按行的位置移动；
+   列表重绘把它冲掉时，下次移动再放回去。只响应鼠标 / 触控板（pointerType = mouse），手指触摸不显示。 */
+function bindHoverGlow() {
+  const AREAS = [
+    ["cur-list", "tbody tr[data-idx]"],                                   // 当前播放
+    ["content", ".tracks tbody tr, .list li, .grid .card"],               // 选曲窗口右栏：曲目表、各种列表、专辑网格
+    ["pick-list", "li"],                                                  // 选曲窗口左栏
+    ["sidebar", ".nav-item"],                                             // 左侧分类
+    ["device-list", "li:not(.offline)"],                                  // AirPlay 设备弹窗
+    ["dev-menu-list", "li:not(.offline)"],                                // 标题里的设备菜单
+  ];
+  const still = matchMedia("(prefers-reduced-motion: reduce)");
+  AREAS.forEach(([id, sel]) => {
+    const box = $(id); if (!box) return;
+    const glow = document.createElement("div");
+    glow.className = "hover-glow"; glow.setAttribute("aria-hidden", "true");
+    let row = null, mx = 0, my = 0, shown = false, tm = 0;
+    const hide = () => { clearTimeout(tm); tm = 0; row = null; shown = false; glow.classList.remove("on"); };
+    /* 经过行与行之间的空隙（分组标题、间距）时稍等一下再隐藏，鼠标很快进入下一行就直接滑过去，不闪 */
+    const hideSoon = () => { if (!tm && shown) tm = setTimeout(hide, 140); else if (!shown) hide(); };
+    const place = (el, instant) => {
+      clearTimeout(tm); tm = 0;
+      if (glow.parentNode !== box) { box.appendChild(glow); shown = false; }
+      const b = box.getBoundingClientRect(), r = el.getBoundingClientRect();
+      const x = r.left - b.left + box.scrollLeft, y = r.top - b.top + box.scrollTop;
+      const jump = !shown || instant || still.matches;
+      if (jump) glow.classList.add("jump");                                      // 第一次出现：直接在原地淡入，不从别处滑过来
+      glow.style.width = r.width + "px"; glow.style.height = r.height + "px";
+      glow.style.transform = `translate(${x}px, ${y}px)`;
+      if (jump) { void glow.offsetWidth; glow.classList.remove("jump"); }
+      glow.classList.add("on"); shown = true; row = el;
+    };
+    const update = () => {
+      const t = document.elementFromPoint(mx, my);
+      const el = t && box.contains(t) ? t.closest(sel) : null;
+      if (S.dragging || (el && el.closest(".swiping"))) return hide();
+      if (!el) return hideSoon();
+      if (el !== row || glow.parentNode !== box) place(el);
+    };
+    box.addEventListener("pointermove", (e) => {
+      if (e.pointerType !== "mouse") return;
+      mx = e.clientX; my = e.clientY; update();
+    });
+    box.addEventListener("pointerleave", hide);
+    box.addEventListener("pointerdown", (e) => { if (e.pointerType !== "mouse") hide(); });
+    box.addEventListener("scroll", () => { if (shown) { row = null; update(); } }, { passive: true });   // 滚轮滚动时，换成鼠标下面的新一行
+    /* 列表变宽 / 变窄（选曲窗口缩回或打开、改窗口大小、拖分隔条）时，鼠标不动也要重新量：
+       立刻贴合鼠标下那一行的新位置和宽度（不做滑动动画），鼠标下已没有行就隐藏 */
+    new ResizeObserver(() => {
+      if (!shown || glow.parentNode !== box) return;
+      const t = document.elementFromPoint(mx, my);
+      const el = t && box.contains(t) ? t.closest(sel) : null;
+      if (el && !S.dragging) place(el, true); else hide();
+    }).observe(box);
+  });
+}
+
 async function start() {
-  if (!start.bound) { bindPlayer(); bindUpdate(); start.bound = true; }   // 连接失败重试时不重复绑定事件
+  if (!start.bound) { bindPlayer(); bindUpdate(); bindHoverGlow(); start.bound = true; }   // 连接失败重试时不重复绑定事件
   try {
     await LMS.findPlayer();
   } catch (e) {

@@ -3,6 +3,18 @@
 All notable changes to this project are documented here.
 Versions follow [Semantic Versioning](https://semver.org/).
 
+## [0.5.0] - 2026-11-18
+
+### Added
+- Mouse hover highlight (`bindHoverGlow()`): one absolutely positioned `.hover-glow` per scroll container (`#cur-list`, `#content`, `#pick-list`, `#sidebar`, `#device-list`, `#dev-menu-list`) slides to the row under the pointer (transform/size transition 0.16 s; first appearance fades in place via `.jump`). Mouse/trackpad only (`pointerType === "mouse"`); 140 ms grace when crossing gaps between rows; follows wheel scrolling; re-appended after list re-renders; hidden while drag-reordering or swiping. A ResizeObserver re-fits it immediately when the container resizes (library open/close, window resize, splitter drag) with the pointer still. Colour `--glow` is a light tint of the stripe grey: `rgba(60,60,100,.035)` light, `rgba(210,210,230,.05)` dark; reduced motion fades only.
+- Library closes on any pointerdown in Now Playing (capture phase, `Views.pickerOpen()` / `Views.closePicker()` exported); that press and a click within 800 ms are swallowed, so it does not play, drag or swipe.
+- `.noq`: when the player bar, measured as if the track info panel were open, cannot fit even its minimal state, `#btn-queue` is hidden and the panel is closed (8 px hysteresis).
+
+### Changed
+- Player bar minimal state: transport buttons keep their size and gaps at every width; `.tiny` now hides only the title and keeps the 44 px cover (gap 4 px, right padding 8 px); new fallback `.mini` hides the cover only when even that does not fit. `fitPlayer()` thresholds: `NEED_TIME` 260, `NEED_TITLE` 82.
+- `.player .tools { margin-left: auto }` keeps the device/AirPlay/mute group at the right end when the centre section is hidden.
+- Row press darkening (`:active` on `.list li`, `.tracks tbody tr`, `.device-list li`) applies only under `@media (hover: none)`, so mouse presses and double-clicks no longer flash.
+
 ## [0.4.2] - 2026-11-18
 
 ### Added
