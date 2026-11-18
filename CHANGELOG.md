@@ -3,6 +3,16 @@
 All notable changes to this project are documented here.
 Versions follow [Semantic Versioning](https://semver.org/).
 
+## [0.5.1] - 2026-11-18
+
+### Added
+- Artists / Playlists two-column library: `.picker-cols` is now flex with a draggable divider `#pick-split` (16 px hit area, `col-resize`; pointer capture, ends on pointerup / pointercancel / lostpointercapture / window pointerup; double-click resets the current state). Three left-column widths as fractions of the library, stored in `localStorage` `daphile.split` `{b,d,a}`: browsing `--split-b` (default .6), item selected `.detail` `--split-d` (default .4), album opened from an artist page `.detail.deep` `--split-a` (default .2, min 80 px). Each column is at least 140 px (80 px for the left column in `.deep`); width changes animate 0.25 s.
+- Scrolling the left column (finger vertical swipe > 10 px, a new mouse-wheel gesture started after the last pick, or pressing its scroll bar) returns to the browsing width.
+- `orderSplit()` keeps browsing ≥ detail ≥ album for the left column, on load, while dragging and on reset, so going deeper never narrows the right column; out-of-order stored values are corrected on load.
+
+### Changed
+- `.picker-cols` switched from a fixed 42 % / 58 % grid to flex widths driven by the CSS variables above; one-column views hide the divider.
+
 ## [0.5.0] - 2026-11-18
 
 ### Added

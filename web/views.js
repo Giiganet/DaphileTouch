@@ -36,8 +36,13 @@ const Views = (() => {
   const CAT = { albums: "专辑", recent: "最近添加", artists: "艺人", songs: "歌曲",
     folders: "文件夹", playlists: "播放列表", favorites: "我的喜爱", search: "搜索" };
   let listPager = null;      // 左栏的分页加载器
+  let pickedAt = -1;         // 最近一次在左栏点选条目的时刻（performance.now）
+  const cols = () => document.querySelector(".picker-cols");
+  /* 两栏状态：浏览（左栏宽，默认 3/5）↔ 详情（选中条目后左栏让位，右栏默认 3/5） */
+  const setDetail = (on) => { cols().classList.toggle("detail", on); if (!on) cols().classList.remove("deep"); };
   function setCols(view) {
-    document.querySelector(".picker-cols").classList.toggle("one", !TWO.has(view));
+    cols().classList.toggle("one", !TWO.has(view));
+    setDetail(false);
     document.getElementById("pick-cat").textContent = CAT[view] || "";
     document.getElementById("pick-count").textContent = "";
     // 从侧栏「搜索」进来时，搜索框加长放到顶部正中；其他分类里输入查找时不跟着跳位置
@@ -50,6 +55,8 @@ const Views = (() => {
   function pickLeft(li, view, arg) {
     pickList().querySelectorAll("li.on").forEach((x) => x.classList.remove("on"));
     li.classList.add("on");
+    pickedAt = performance.now();
+    setDetail(true);                       // 左栏向左缩，给右栏的详情让出位置
     stack.length = 0;
     current = null;
     go(view, arg);
@@ -553,6 +560,8 @@ const Views = (() => {
     document.querySelector(".detail-head").classList.remove("centered");
     const va = document.getElementById("view-act"); va.innerHTML = ""; va.onclick = null;
     if (TOP.has(view)) setCols(view);   // 换分类时重设一栏/两栏；进入详情时左栏保持不动
+    // 两栏里从详情再点进下一层（艺人 → 专辑，有返回栈）：左栏再缩到 1/5，专辑页占 4/5；返回到详情恢复 2/5
+    else cols().classList.toggle("deep", stack.length > 0 && cols().classList.contains("detail"));
     document.getElementById("btn-back").hidden = !stack.length;
     // 文件夹里往下走时，「‹ 文件夹名」这一行上移，顶替窗口顶部的「文件夹 N 项」
     document.getElementById("picker").classList.toggle("head-up", rootView === "folders" && stack.length > 0);
@@ -670,6 +679,87 @@ const Views = (() => {
     });
   }
 
+  /* ---------- 两栏分隔线（艺人 / 播放列表）----------
+     三种状态：浏览（左栏 3/5）→ 选中条目看详情（2/5）→ 详情里点进专辑（1/5，专辑页占 4/5）。
+     拖动：调整当前状态下左栏的占比，三种状态各记各的，存在 localStorage；双击恢复当前状态的默认值。
+     滑动左栏（手指竖向滑动、鼠标滚轮、拖滚动条）表示还要接着选：左栏重新变宽回浏览状态 */
+  const SPLIT_KEY = "daphile.split";
+  const SPLIT_DEF = { b: 0.6, d: 0.4, a: 0.2 };
+  const SPLIT_MIN = 140;                 // 每栏至少 140px，与 style.css 一致
+  let split = { ...SPLIT_DEF };
+  function applySplit() {
+    const st = document.documentElement.style;
+    st.setProperty("--split-b", String(split.b));
+    st.setProperty("--split-d", String(split.d));
+    st.setProperty("--split-a", String(split.a));
+  }
+  /* 三档左栏始终 浏览 ≥ 详情 ≥ 专辑：越往里点，右栏只会变宽、不会变窄。
+     改了哪一档就以它为准：比上一档宽就顶到上一档为止，下一档比它宽就跟着收窄 */
+  function orderSplit(k) {
+    if (k !== "a") split.d = Math.min(split.d, split.b);
+    split.a = Math.min(split.a, split.d);
+  }
+  const saveSplit = () => { try { localStorage.setItem(SPLIT_KEY, JSON.stringify(split)); } catch (_) { /* 记不住也不影响使用 */ } };
+  function bindSplit() {
+    try {
+      const v = JSON.parse(localStorage.getItem(SPLIT_KEY) || "null");
+      if (v && v.b > 0 && v.b < 1 && v.d > 0 && v.d < 1) split = { b: v.b, d: v.d, a: v.a > 0 && v.a < 1 ? v.a : SPLIT_DEF.a };
+    } catch (_) { /* 用默认比例 */ }
+    orderSplit("b");                     // 以前存下的比例若顺序不对（专辑档比详情档宽等），读进来就纠正
+    applySplit();
+    const h = document.getElementById("pick-split"), c = cols(), pl = pickList();
+    const key = () => (c.classList.contains("deep") ? "a" : c.classList.contains("detail") ? "d" : "b");
+    h.addEventListener("pointerdown", (e) => {
+      if (e.button > 0) return;
+      e.preventDefault();
+      h.setPointerCapture(e.pointerId);
+      c.classList.add("splitting");
+      const r = c.getBoundingClientRect(), k = key();
+      const lo = k === "a" ? Math.max(0.1, 80 / r.width) : Math.max(0.2, SPLIT_MIN / r.width);   // 专辑页状态左栏可窄到 80px
+      const hi = Math.min(0.8, 1 - SPLIT_MIN / r.width);
+      const move = (ev) => {
+        if (lo >= hi) return;
+        split[k] = Math.round(Math.min(hi, Math.max(lo, (ev.clientX - r.left) / r.width)) * 1000) / 1000;
+        orderSplit(k);
+        applySplit();
+      };
+      // 松手、取消或指针捕获丢失（任一先到）都结束拖动，不会卡在拖动状态
+      const up = () => {
+        h.removeEventListener("pointermove", move);
+        ["pointerup", "pointercancel", "lostpointercapture"].forEach((t) => h.removeEventListener(t, up));
+        window.removeEventListener("pointerup", up);
+        c.classList.remove("splitting");
+        saveSplit();
+      };
+      h.addEventListener("pointermove", move);
+      ["pointerup", "pointercancel", "lostpointercapture"].forEach((t) => h.addEventListener(t, up));
+      window.addEventListener("pointerup", up);
+    });
+    h.addEventListener("dblclick", () => { const k = key(); split[k] = SPLIT_DEF[k]; orderSplit(k); applySplit(); saveSplit(); });
+
+    const expand = () => { if (c.classList.contains("detail")) setDetail(false); };
+    // 手指：竖向滑动超过 10px 才算（点一下选艺人不算，横滑留给「左滑关闭窗口」）
+    let tx = 0, ty = 0, moved = false;
+    pl.addEventListener("touchstart", (e) => { const t = e.touches[0]; tx = t.clientX; ty = t.clientY; moved = false; }, { passive: true });
+    pl.addEventListener("touchmove", (e) => {
+      if (moved) return;
+      const t = e.touches[0], dx = t.clientX - tx, dy = t.clientY - ty;
+      if (Math.abs(dy) > 10 && Math.abs(dy) > Math.abs(dx)) { moved = true; expand(); }
+    }, { passive: true });
+    // 滚轮 / 触控板：只认点选之后新开始的一串滚动；点选前那一下的触控板惯性滚动不算，否则刚缩回去又弹开
+    let wStart = 0, wLast = -1e9;
+    pl.addEventListener("wheel", (e) => {
+      const now = performance.now();
+      if (now - wLast > 200) wStart = now;
+      wLast = now;
+      if (Math.abs(e.deltaY) > Math.abs(e.deltaX) && wStart > pickedAt) expand();
+    }, { passive: true });
+    // 鼠标按在左栏滚动条上
+    pl.addEventListener("pointerdown", (e) => {
+      if (e.pointerType === "mouse" && e.target === pl && e.offsetX >= pl.clientWidth) expand();
+    });
+  }
+
   /* ---------- 向左滑动关闭选曲窗口：窗口跟着手指左移，拉过窗口宽度 1/4（或快速一甩）松手即关闭，不够就弹回 ----------
      喜爱页的行（左滑是移出喜爱）、分隔条、输入框上不接管；竖向移动留给列表滚动 */
   /* 选曲窗口跟手左移（x ≤ 0）。窗口自己的左滑、喜爱行露出按钮后继续左滑，都用这一对函数 */
@@ -701,7 +791,7 @@ const Views = (() => {
     p.addEventListener("pointerdown", (e) => {
       g = null;
       if (e.button > 0 || !pickerOpen()) return;
-      if (e.target.closest("[data-swipe], #picker-resize, input, textarea, select")) return;
+      if (e.target.closest("[data-swipe], #picker-resize, #pick-split, input, textarea, select")) return;
       g = { x: e.clientX, y: e.clientY, id: e.pointerId, on: false };
     });
     p.addEventListener("pointermove", (e) => {
@@ -730,6 +820,7 @@ const Views = (() => {
 
   function init() {
     bindResize();
+    bindSplit();
     bindSwipeClose();
     // 喜爱页：向左滑动一行先露出红色「移出」按钮，松手就停住，再点按钮才移出喜爱；
     // 手指不松开继续左滑，就变成拖动选曲窗口（够远松手关闭），不会误删。

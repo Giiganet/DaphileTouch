@@ -21,7 +21,7 @@
   function later() { fit(); clearTimeout(t); t = setTimeout(fit, 350); }   // 旋转动画结束后再量一次，取最终尺寸
   fit(); addEventListener("resize", later); addEventListener("orientationchange", later); addEventListener("pageshow", later);
   if (window.visualViewport) visualViewport.addEventListener("resize", later); })();</script>
-<link rel="stylesheet" href="style.css?v=0.5.0">
+<link rel="stylesheet" href="style.css?v=0.5.1">
 </head>
 <body>
 <div class="app" id="app">
@@ -49,7 +49,7 @@
         <span class="ts-track" aria-hidden="true"><span class="ts-knob"></span></span>
         <svg class="ts-moon" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 14.6A8.2 8.2 0 0 1 9.4 4a8.2 8.2 0 1 0 10.6 10.6z"/></svg>
       </button>
-      <div class="app-ver" id="app-ver" aria-label="版本">v0.5.0</div>
+      <div class="app-ver" id="app-ver" aria-label="版本">v0.5.1</div>
     </div>
   </nav>
 
@@ -89,6 +89,8 @@
     <div class="picker-cols">
       <!-- 左栏：分类下的条目（艺人、播放列表） -->
       <section class="pick-list" id="pick-list"></section>
+      <!-- 两栏分隔线：左右拖动调两栏宽度，双击恢复默认 -->
+      <div class="pick-split" id="pick-split" role="separator" aria-orientation="vertical" aria-label="拖动调节两栏宽度，双击恢复默认" title="拖动调节两栏宽度，双击恢复默认"></div>
       <!-- 右栏：选中条目的详情 -->
       <section class="pick-detail">
         <header class="detail-head">
@@ -252,9 +254,9 @@
 </div>
 
 <div class="toast" id="toast" hidden></div>
-<script src="api.js?v=0.5.0"></script>
-<script src="views.js?v=0.5.0"></script>
-<script src="rhythm.js?v=0.5.0"></script>
-<script src="app.js?v=0.5.0"></script>
+<script src="api.js?v=0.5.1"></script>
+<script src="views.js?v=0.5.1"></script>
+<script src="rhythm.js?v=0.5.1"></script>
+<script src="app.js?v=0.5.1"></script>
 </body>
 </html>

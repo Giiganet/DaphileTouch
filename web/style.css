@@ -428,13 +428,36 @@ body.bigvu-open .picker { bottom: calc(226px + env(safe-area-inset-bottom, 0px))
 .picker-head .pick-count { margin-right: 6px; }
 .detail-head .pick-count { margin-left: 8px; }
 .pick-count:empty { display: none; }
-.picker-cols { flex: 1; min-height: 0; display: grid; grid-template-columns: 42% 58%; }
+.picker-cols { flex: 1; min-height: 0; display: flex; }
+/* 两栏宽度（艺人 / 播放列表）：左栏按比例取宽，右栏占剩下的。
+   --split-b：还没选条目（浏览）时左栏占比，默认 3/5；--split-d：选中条目、右栏显示详情时左栏占比，默认 2/5；
+   --split-a：在详情里再点进专辑时左栏占比，默认 1/5。
+   两个比例各自可拖分隔线调整，由 views.js 写在根元素上并记住。切换时左栏宽度 0.25s 过渡 */
+:root { --split-b: .6; --split-d: .4; --split-a: .2; }
+.pick-list {
+  flex: none; width: calc(var(--split-b) * 100%); min-width: 140px; max-width: calc(100% - 140px);
+  transition: width .25s ease;
+}
+.picker-cols.detail .pick-list { width: calc(var(--split-d) * 100%); }
+/* deep：在右栏里再点进下一层（艺人 → 专辑），左栏只留 1/5（--split-a），专辑页占 4/5；左栏此时最窄 80px */
+.picker-cols.detail.deep .pick-list { width: calc(var(--split-a) * 100%); min-width: 80px; }
+.picker-cols.splitting .pick-list { transition: none; }
+@media (prefers-reduced-motion: reduce) { .pick-list { transition: none; } }
 .pick-list {
   min-height: 0; overflow-y: auto; -webkit-overflow-scrolling: touch;
   padding: 4px 8px 12px; border-right: 1px solid var(--line);
 }
 .pick-list li.on { background: var(--hover); border-radius: 8px; }
-.pick-detail { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
+.pick-detail { flex: 1; display: flex; flex-direction: column; min-width: 0; min-height: 0; }
+/* 分隔线：本身 0 宽，贴在左栏右边框上；两侧各 8px 的拖动区，中间一根小竖条提示可拖（同窗口右边缘） */
+.pick-split { position: relative; z-index: 4; flex: none; width: 0; touch-action: none; }
+.pick-split::before { content: ""; position: absolute; top: 0; bottom: 0; left: -8px; width: 16px; cursor: col-resize; touch-action: none; }
+.pick-split::after {
+  content: ""; position: absolute; left: -2px; top: 50%; width: 4px; height: 40px; margin-top: -20px; pointer-events: none;
+  border-radius: 2px; background: var(--text3); opacity: .35; transition: opacity .15s, background .15s;
+}
+.pick-split:hover::after, .picker-cols.splitting .pick-split::after { opacity: 1; background: var(--accent); }
+.picker-cols.splitting, .picker-cols.splitting * { cursor: col-resize !important; user-select: none; -webkit-user-select: none; }
 .detail-head { display: flex; align-items: center; gap: 4px; height: 44px; padding: 0 12px; flex: none; }
 .detail-head .view-title { font-size: 15px; }
 .picker-body { flex: 1; min-height: 0; overflow-y: auto; -webkit-overflow-scrolling: touch; padding: 0 12px 12px; }
@@ -452,8 +475,7 @@ body.bigvu-open .picker { bottom: calc(226px + env(safe-area-inset-bottom, 0px))
 .np-link:active { opacity: .6; }
 .pill:disabled { opacity: .35; }
 /* 一栏模式（专辑、最近添加、歌曲、文件夹、收藏、搜索）：不显示左栏，右栏占满 */
-.picker-cols.one { grid-template-columns: 1fr; }
-.picker-cols.one .pick-list { display: none; }
+.picker-cols.one .pick-list, .picker-cols.one .pick-split { display: none; }
 .pick-list li[data-k] { cursor: pointer; }
 .picker .grid { grid-template-columns: repeat(2, 1fr); gap: 16px 12px; }
 .picker-cols.one .grid { grid-template-columns: repeat(3, 1fr); }
