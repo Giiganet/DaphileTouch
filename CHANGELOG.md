@@ -3,6 +3,17 @@
 All notable changes to this project are documented here.
 Versions follow [Semantic Versioning](https://semver.org/).
 
+## [0.4.2] - 2026-11-18
+
+### Added
+- Large spectrum (`#vu-big`): drag up on the small spectrum in the player bar (vertical-dominant, follows the finger after 8 px, opens past 40 % of 90 px) to open a 128 px LED spectrum floating above the player bar; swipe down on it (> 40 px) to close. The same band data is drawn to both canvases (segment/pitch 2/3 small, 3/5 large). Opening it turns the small cell back into the progress bar; state is kept in `localStorage` (`daphile.vubig`), and `body.bigvu-open` adds bottom room to the content and library. Width is capped at 800 px (iPad 1080 landscape) and centred on wider windows; it closes automatically when the player bar title can no longer show its first character plus an ellipsis.
+- Track info panel (`#queue`) can be closed by tapping empty space in Now Playing or swiping it right (start 12 px, horizontal > 1.5 × vertical, closes past 1/4 width or > 0.6 px/ms); `setQueue()` / `closeQueue()` slide it out before hiding.
+- `fitPlayer()`: a ResizeObserver measures the room left for the centre of the player bar. `.narrow` hides time and progress/spectrum; `.tiny` also hides cover and title and tightens gaps/buttons. Measurement is done without `.tiny` and with 8 px hysteresis so it no longer flips every pixel near the threshold. Title keeps at least 56 px and the time group at least 140 px, so with the track info panel open at 1080 px the title stays visible.
+
+### Fixed
+- Spectrum stopped after the first ~8 s segment on MP3 in Safari: later Range segments start mid-frame and Safari's `decodeAudioData` rejects them. `mp3Sync()` now skips to the first valid Layer III frame (three consecutive frame headers) before decoding, and the segment start time is corrected accordingly. Also: Range requests use `cache: "no-store"`, the returned Content-Range start is checked, reads time out after 8 s and read + decode after 15 s; MP3 bitrate is computed from file size when not a CUE track.
+- Firefox dark mode showed a light classic scroll bar on the right of the library; `scrollbar-color` is now set for light and dark themes.
+
 ## [0.4.1] - 2026-11-16
 
 ### Added

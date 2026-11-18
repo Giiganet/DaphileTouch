@@ -21,7 +21,7 @@
   function later() { fit(); clearTimeout(t); t = setTimeout(fit, 350); }   // 旋转动画结束后再量一次，取最终尺寸
   fit(); addEventListener("resize", later); addEventListener("orientationchange", later); addEventListener("pageshow", later);
   if (window.visualViewport) visualViewport.addEventListener("resize", later); })();</script>
-<link rel="stylesheet" href="style.css?v=0.4.1">
+<link rel="stylesheet" href="style.css?v=0.4.2">
 </head>
 <body>
 <div class="app" id="app">
@@ -49,7 +49,7 @@
         <span class="ts-track" aria-hidden="true"><span class="ts-knob"></span></span>
         <svg class="ts-moon" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 14.6A8.2 8.2 0 0 1 9.4 4a8.2 8.2 0 1 0 10.6 10.6z"/></svg>
       </button>
-      <div class="app-ver" id="app-ver" aria-label="版本">v0.4.1</div>
+      <div class="app-ver" id="app-ver" aria-label="版本">v0.4.2</div>
     </div>
   </nav>
 
@@ -118,6 +118,11 @@
 
   <!-- 底部悬浮播放条 -->
   <footer class="player" id="player">
+    <!-- 大频谱：在进度条那一格的频谱上按住往上拖出来；按住它往下滑关闭 -->
+    <div class="vu-big" id="vu-big" aria-hidden="true">
+      <canvas id="vu-big-cv"></canvas>
+      <span class="vu-na">不可用</span>
+    </div>
     <div class="transport">
       <button class="icon-btn" id="btn-shuffle" aria-label="随机">
         <!-- 随机播放：两条交叉的线，右端各带箭头（仿 SF Symbols shuffle） -->
@@ -247,9 +252,9 @@
 </div>
 
 <div class="toast" id="toast" hidden></div>
-<script src="api.js?v=0.4.1"></script>
-<script src="views.js?v=0.4.1"></script>
-<script src="rhythm.js?v=0.4.1"></script>
-<script src="app.js?v=0.4.1"></script>
+<script src="api.js?v=0.4.2"></script>
+<script src="views.js?v=0.4.2"></script>
+<script src="rhythm.js?v=0.4.2"></script>
+<script src="app.js?v=0.4.2"></script>
 </body>
 </html>

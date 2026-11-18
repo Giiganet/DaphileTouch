@@ -655,12 +655,65 @@ function bindPlayer() {
   bindTheme();
   // iOS Safari 只有页面上挂了 touchstart 监听时，手指按住才会触发 :active（行被点时的加深底色）
   document.addEventListener("touchstart", () => {}, { passive: true });
-  $("btn-queue").onclick = () => {
-    const q = $("queue");
-    q.hidden = !q.hidden;
-    $("app").classList.toggle("queue-open", !q.hidden);
-    $("btn-queue").classList.toggle("on", !q.hidden);
+  /* 右侧曲目详情（正在播放信息）：按钮开关；点当前播放列表的空白处，或在详情上向右滑，都会向右收起 */
+  const q = $("queue");
+  const setQueue = (open) => {
+    q.hidden = !open;
+    q.classList.remove("closing");
+    q.style.transition = q.style.transform = "";
+    $("app").classList.toggle("queue-open", open);
+    $("btn-queue").classList.toggle("on", open);
   };
+  /* 向右收起：先滑出去（.closing 动画），动画结束再真正隐藏；from 为当前已拖出的距离 */
+  const closeQueue = (from = 0) => {
+    if (q.hidden || q.classList.contains("closing")) return;
+    q.style.transition = "transform .2s ease-in";
+    q.style.transform = `translateX(${from}px)`;
+    q.classList.add("closing");
+    requestAnimationFrame(() => { q.style.transform = "translateX(100%)"; });
+    setTimeout(() => setQueue(false), 210);
+  };
+  $("btn-queue").onclick = () => { if (q.hidden) setQueue(true); else closeQueue(); };
+  /* 在详情上向右滑：面板跟着手指右移，拉过面板宽度 1/4（或快速一甩）松手即收起，不够就弹回；竖向移动留给滚动 */
+  {
+    const START = 12;
+    let g = null;
+    q.addEventListener("pointerdown", (e) => {
+      g = null;
+      if (e.button > 0 || q.hidden || q.classList.contains("closing")) return;
+      g = { x: e.clientX, y: e.clientY, id: e.pointerId, on: false, dx: 0, v: 0, t: e.timeStamp };
+    });
+    q.addEventListener("pointermove", (e) => {
+      if (!g || e.pointerId !== g.id) return;
+      const dx = e.clientX - g.x, dy = e.clientY - g.y;
+      if (!g.on) {
+        if (Math.abs(dy) > START) { g = null; return; }            // 竖向：是滚动
+        if (dx < START || dx < Math.abs(dy) * 1.5) return;          // 还没确定是向右横滑
+        g.on = true;
+        q.style.transition = "none";
+        try { q.setPointerCapture(g.id); } catch (_) { /* 忽略 */ }
+      }
+      e.preventDefault();
+      const x = Math.max(0, dx - START);                           // 扣掉起步的 12px，面板不会突然一跳
+      g.v = (x - g.dx) / Math.max(8, e.timeStamp - g.t);           // 速度 px/ms
+      g.dx = x; g.t = e.timeStamp;
+      q.style.transform = `translateX(${x}px)`;
+    });
+    const end = (ok) => (e) => {
+      if (!g || e.pointerId !== g.id) return;
+      const { on, dx, v } = g;
+      g = null;
+      if (!on) return;
+      S.justSwiped = Date.now();                                   // 滑完松手产生的点击不当作点按
+      if (ok && (dx > q.offsetWidth / 4 || (v > 0.6 && dx > 30))) return closeQueue(dx);
+      q.style.transition = "transform .2s ease";
+      q.style.transform = "";
+      setTimeout(() => { if (!q.style.transform) q.style.transition = ""; }, 220);
+    };
+    q.addEventListener("pointerup", end(true));
+    q.addEventListener("pointercancel", end(false));
+    q.addEventListener("click", (e) => { if (Date.now() - (S.justSwiped || 0) < 300) { e.stopPropagation(); e.preventDefault(); } }, true);
+  }
   // 正在播放时只清除其他曲目，当前这首保留并继续播放；暂停或停止时清除整个队列
   $("btn-clear").onclick = async () => {
     const st = S.st || {};
@@ -686,7 +739,11 @@ function bindPlayer() {
   $("cur-list").onclick = (e) => {
     if (S.justDragged) return;   // 刚拖完松手产生的点击，不当作「播放这首」
     const tr = e.target.closest("tr[data-idx]");
-    if (tr) act(async () => {
+    if (!tr) {                   // 点在列表的空白处（不在任何一行上）：收起右侧详情
+      if (!e.target.closest("button, a, input, th")) closeQueue();
+      return;
+    }
+    act(async () => {
       if (S.st && Number(S.st.power) !== 1) await LMS.power(1);
       await LMS.jump(tr.dataset.idx);
     });
@@ -781,17 +838,26 @@ function bindPlayer() {
   });
   document.addEventListener("keydown", (e) => { if (e.key === "Escape") { closeDevMenu(); closeDevices(); } });
 
-  /* 「时间 + 进度条 + 剩余时间」整组与频谱共用一格：点一下整组切换；进度条模式下在进度条上按住左右拖动才是跳转 */
-  const bar = $("bar"), box = $("lcd-time");
+  /* 「时间 + 进度条 + 剩余时间」整组与频谱共用一格：点一下整组切换；进度条模式下在进度条上按住左右拖动才是跳转；
+     频谱模式下按住往上拖，拉出播放条上方的大频谱（这一格随即换回进度条） */
+  const bar = $("bar"), box = $("lcd-time"), big = $("vu-big");
+  const PULL = 90;                     // 往上拖满 90px 视为完全拉出；松手时超过 40% 就打开
   const ratio = (e) => {
     const r = bar.getBoundingClientRect();
     return Math.min(1, Math.max(0, (e.clientX - r.left) / r.width));
   };
+  /* 拖动中让大频谱跟手：p 为 0（收起）到 1（完全展开） */
+  const follow = (p) => {
+    big.classList.add("dragging");
+    big.style.opacity = p;
+    big.style.transform = `translateY(${(1 - p) * 40}px) scale(${0.96 + 0.04 * p})`;
+  };
+  const settle = () => { big.classList.remove("dragging"); big.style.opacity = big.style.transform = ""; };
   box.addEventListener("pointerdown", (e) => {
-    const x0 = e.clientX, vu = Rhythm.on;
+    const x0 = e.clientX, y0 = e.clientY, vu = Rhythm.on && !Rhythm.big;
     const dur = Number(S.st?.duration || 0);
     const canSeek = !vu && e.target.closest("#bar") && dur && Number(S.st?.can_seek);
-    let dragging = false;
+    let dragging = false, pulling = false, p = 0;
     box.setPointerCapture(e.pointerId);
     const show = (ev) => {
       const t = ratio(ev) * dur;
@@ -800,20 +866,87 @@ function bindPlayer() {
       $("t-left").textContent = "-" + fmtTime(dur - t);
     };
     box.onpointermove = (ev) => {
+      const dx = ev.clientX - x0, dy = ev.clientY - y0;
+      if (vu) {
+        if (!pulling && (dy > -8 || Math.abs(dy) < Math.abs(dx))) return;   // 往上为主、超过 8px 才算拉
+        pulling = true;
+        p = Math.min(1, Math.max(0, -dy / PULL));
+        follow(p);
+        return;
+      }
       if (!canSeek) return;
-      if (!dragging && Math.abs(ev.clientX - x0) < 6) return;   // 6px 以内算点按，不算拖动
+      if (!dragging && Math.abs(dx) < 6) return;   // 6px 以内算点按，不算拖动
       dragging = S.seeking = true;
       show(ev);
     };
     box.onpointerup = box.onpointercancel = (ev) => {
       box.onpointermove = box.onpointerup = box.onpointercancel = null;
-      if (!dragging) { if (ev.type === "pointerup") Rhythm.setOn(!vu); return; }
+      if (pulling) {
+        const open = ev.type === "pointerup" && p > 0.4;
+        if (open) Rhythm.setBig(true);
+        settle();                        // 去掉跟手样式，靠 CSS 过渡落到打开或收起的位置
+        return;
+      }
+      if (!dragging) { if (ev.type === "pointerup" && !Rhythm.big) Rhythm.setOn(!Rhythm.on); return; }   // 大频谱开着时点按不切换
       const t = ratio(ev) * dur;
       S.st.time = t; S.polledAt = Date.now();
       S.seeking = false;
       act(() => LMS.seek(t));
     };
   });
+
+  /* 大频谱：按住往下滑收回（超过 40px 松手即关闭，这一格保持进度条）；点按不做任何事 */
+  big.addEventListener("pointerdown", (e) => {
+    if (!Rhythm.big) return;
+    const y0 = e.clientY;
+    let d = 0;
+    big.setPointerCapture(e.pointerId);
+    big.onpointermove = (ev) => {
+      d = Math.max(0, ev.clientY - y0);
+      if (d < 4) return;
+      big.classList.add("dragging");
+      big.style.opacity = Math.max(0, 1 - d / 140);
+      big.style.transform = `translateY(${d}px)`;
+    };
+    big.onpointerup = big.onpointercancel = (ev) => {
+      big.onpointermove = big.onpointerup = big.onpointercancel = null;
+      if (ev.type === "pointerup" && d > 40) Rhythm.setBig(false);
+      settle();
+    };
+  });
+}
+
+/* 播放条变窄时逐级隐藏中间部分：先隐藏「时间 + 进度条（频谱）」，再隐藏封面。
+   播放条宽度随窗口和右侧详情开关变化，所以不用媒体查询，而是量出中间那段（.lcd）能分到的宽度：
+   可用宽度 = 播放条内宽 − 左侧播放按钮组 − 右侧工具按钮组 − 两处间距 */
+function fitPlayer() {
+  const p = $("player"), tr = p.querySelector(".transport"), tl = p.querySelector(".tools"), txt = p.querySelector(".lcd-text");
+  const NEED_TIME = 44 + 10 + 56 + 10 + 140;   // 封面 + 间距 + 曲名至少 56 + 间距 + 时间/进度条至少 140，才显示时间组
+  const NEED_COVER = 44;              // 封面本身
+  /* .tiny 会收窄按钮和间距，若直接按当前尺寸量，收窄后空间又「够了」→ 去掉 .tiny → 又不够 → 来回闪。
+     所以每次都先去掉 .tiny、按未收紧的尺寸量，再决定；另留 8px 回差，拖动窗口到临界点也不抖。 */
+  const HYS = 8;
+  const ttl = $("lcd-title"), mc = document.createElement("canvas").getContext("2d");
+  const oneChar = () => {
+    const t = (ttl.textContent || "").trim(); if (!t) return 0;
+    const cs = getComputedStyle(ttl); mc.font = cs.fontWeight + " " + cs.fontSize + " " + cs.fontFamily;
+    return Math.ceil(mc.measureText(Array.from(t)[0]).width + mc.measureText("\u2026").width);
+  };
+  const fit = () => {
+    const wasNarrow = p.classList.contains("narrow"), wasTiny = p.classList.contains("tiny");
+    if (wasTiny) p.classList.remove("tiny");
+    const cs = getComputedStyle(p);
+    const inner = p.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight);
+    const gap = parseFloat(cs.columnGap || cs.gap) || 12;
+    const room = inner - tr.offsetWidth - tl.offsetWidth - gap * 2;
+    p.classList.toggle("narrow", room < NEED_TIME + (wasNarrow ? HYS : 0));
+    p.classList.toggle("tiny", room < NEED_COVER + (wasTiny ? HYS : 0));
+    /* 曲目名被挤到最后一个字也显示不出（标题宽度 < 首字 + 省略号，或封面标题整段隐藏）时，大频谱也关掉 */
+    if (Rhythm.big && (p.classList.contains("tiny") || txt.clientWidth < oneChar())) Rhythm.setBig(false);
+  };
+  fit();
+  if (window.ResizeObserver) new ResizeObserver(fit).observe(p);
+  else window.addEventListener("resize", fit);
 }
 
 async function start() {
@@ -833,8 +966,9 @@ async function start() {
     if (!st || !S.cur || S.seeking) return null;
     const playing = st.mode === "play";
     return { pos: Number(st.time || 0) + (playing ? (Date.now() - S.polledAt) / 1000 : 0), playing };
-  });
+  }, $("vu-big-cv"));
   syncRhythmDelay();
+  fitPlayer();
   document.addEventListener("visibilitychange", () => { if (!document.hidden) poll(); });
   if (typeof Views !== "undefined") Views.init();
 }

@@ -9,19 +9,33 @@ const Rhythm = (() => {
   const NB = 40;           // 频段（细柱）数
   const FMIN = 50, FMAX = 16000;
   const DBMIN = -66, DBMAX = -6;   // 柱高 0–满格对应的 dB 范围
+  const KEY_BIG = "daphile.vubig";
   let on = false, cv = null, g = null, ac = null, getPos = null, delay = 0;
+  let big = false, bcv = null, bg = null;   // 大频谱：从进度条那一格往上拖出来，浮在播放条上方
   let trk = null;          // 当前曲目的文件信息与解码所需的文件头
   let busy = false, failUntil = 0;
   const bars = new Float32Array(NB);
   let raf = 0;
+  const active = () => on || big;
 
-  try { on = localStorage.getItem(KEY) === "1"; } catch (_) { /* 忽略 */ }
+  try { on = localStorage.getItem(KEY) === "1"; big = localStorage.getItem(KEY_BIG) === "1"; } catch (_) { /* 忽略 */ }
 
   /* Range 读取 [a, b]；服务器不支持分段时宁可放弃，也不整首下载 */
+  /* cache: "no-store"：分段请求不进浏览器缓存。Safari 等浏览器对带 Range 的缓存处理不一致，
+     第二段起可能拿到缓存里的整文件（200）或错位的片段，频谱就只亮第一段约 8 秒 */
   async function range(url, a, b) {
-    const r = await fetch(url, { headers: { Range: `bytes=${a}-${b}` } });
-    if (r.status !== 206) { try { r.body && r.body.cancel(); } catch (_) { /* 忽略 */ } throw new Error("no range"); }
-    return new Uint8Array(await r.arrayBuffer());
+    // 超过 8 秒没读完就放弃这一次（3 秒后重试），免得一次卡住的请求让后面的段再也不读
+    const ctl = window.AbortController ? new AbortController() : null;
+    const timer = ctl && setTimeout(() => ctl.abort(), 8000);
+    try {
+      const r = await fetch(url, { headers: { Range: `bytes=${a}-${b}` }, cache: "no-store", signal: ctl ? ctl.signal : undefined });
+      const cr = /bytes (\d+)-/.exec(r.headers.get("Content-Range") || "");
+      if (r.status !== 206 || (cr && Number(cr[1]) !== a)) {
+        try { r.body && r.body.cancel(); } catch (_) { /* 忽略 */ }
+        throw new Error("no range " + r.status);
+      }
+      return new Uint8Array(await r.arrayBuffer());
+    } finally { clearTimeout(timer); }
   }
   const u32le = (d, i) => d[i] | (d[i + 1] << 8) | (d[i + 2] << 16) | (d[i + 3] * 16777216);
   const tag = (d, i) => String.fromCharCode(d[i], d[i + 1], d[i + 2], d[i + 3]);
@@ -63,6 +77,8 @@ const Rhythm = (() => {
     } else if (t.type === "mp3") {
       const h = await range(url, 0, 9);
       if (tag(h, 0).startsWith("ID3")) t.start = 10 + (((h[6] & 127) << 21) | ((h[7] & 127) << 14) | ((h[8] & 127) << 7) | (h[9] & 127));
+      // LMS 报的码率是取整的（如 320k 的文件报「319kbps」），一小时的文件会差出十来秒；非 CUE 时按「音频字节 ÷ 时长」算
+      if (!m && Number(info.filesize) > t.start && Number(info.duration) > 0) t.bps = (Number(info.filesize) - t.start) / Number(info.duration);
     } else throw new Error("unsupported");
     if (!t.bps && info.filesize && info.duration) t.bps = Number(info.filesize) / Number(info.duration);
     if (!t.bps) throw new Error("no bitrate");
@@ -90,6 +106,27 @@ const Rhythm = (() => {
     if (sr === 12) p += 1; else if (sr === 13 || sr === 14) p += 2;
     if (crc8(d, i, p) !== d[p]) return -1;
     return (d[i + 1] & 1) ? n : n * t.block;             // 变块长记采样号，固定块长记帧号
+  }
+
+  /* MP3 帧头（只认 Layer III）：返回帧长，不是合法帧头返回 0 */
+  const MP3_BR = [[0, 8, 16, 24, 32, 40, 48, 56, 64, 80, 96, 112, 128, 144, 160],      // MPEG-2 / 2.5
+                  [0, 32, 40, 48, 56, 64, 80, 96, 112, 128, 160, 192, 224, 256, 320]];  // MPEG-1
+  function mp3Frame(d, i) {
+    if (i + 4 > d.length || d[i] !== 0xff || (d[i + 1] & 0xe0) !== 0xe0) return 0;
+    const ver = (d[i + 1] >> 3) & 3, layer = (d[i + 1] >> 1) & 3, bi = d[i + 2] >> 4, si = (d[i + 2] >> 2) & 3;
+    if (ver === 1 || layer !== 1 || bi === 0 || bi === 15 || si === 3) return 0;
+    const sr = [44100, 48000, 32000][si] / (ver === 3 ? 1 : ver === 2 ? 2 : 4);
+    return Math.floor((ver === 3 ? 144000 : 72000) * MP3_BR[ver === 3 ? 1 : 0][bi] / sr) + ((d[i + 2] >> 1) & 1);
+  }
+  /* 从任意字节起点找到第一个真正的帧头（后面连着两个帧头都对得上才算），找不到返回 -1。
+     Safari 解码 MP3 时要求数据从帧头开始；Chrome 会自己跳过开头的半帧，所以只在 Safari 出问题 */
+  function mp3Sync(d) {
+    for (let i = 0; i + 4 < d.length; i++) {
+      const n1 = mp3Frame(d, i); if (!n1) continue;
+      const n2 = mp3Frame(d, i + n1); if (!n2 || (d[i + n1 + 1] & 0xfe) !== (d[i + 1] & 0xfe)) continue;
+      if (mp3Frame(d, i + n1 + n2)) return i;
+    }
+    return -1;
   }
 
   function decode(bytes) {
@@ -141,7 +178,9 @@ const Rhythm = (() => {
         a += first;
       } else {
         const data = await range(t.url, a, a + Math.floor(span * t.bps));
-        bytes = data; t0 = (a - t.start) / t.bps;
+        const k = mp3Sync(data);                          // 从第一个完整帧开始，丢掉开头的半帧
+        if (k < 0) throw new Error("no mp3 frame");
+        bytes = data.slice(k); t0 = (a + k - t.start) / t.bps;
       }
       const buf = await decode(bytes);
       const t1 = t0 + buf.duration;
@@ -218,7 +257,7 @@ const Rhythm = (() => {
   let segs = [], curId = null, want = null, color = "#6e6e73", colorAt = 0;
 
   /* 换歌：读新曲目的文件头；不支持的格式记下来，灯就不亮 */
-  function setTrack(id) { curId = id == null ? null : String(id); if (on) load(); }
+  function setTrack(id) { curId = id == null ? null : String(id); if (active()) load(); }
   async function load() {
     const id = curId;
     if (want === id) return;
@@ -240,8 +279,11 @@ const Rhythm = (() => {
     if (cur && (cur.t1 - pos > 3 || segs.some((s) => s.t0 <= cur.t1 + 0.1 && s.t1 > cur.t1 + 1))) return;
     busy = true;
     const t = trk;
+    const at0 = cur ? cur.t1 : pos;
     try {
-      const s = await segment(t, cur ? cur.t1 : pos);
+      // 整段（读取 + 解码）最多等 15 秒：个别浏览器的解码偶尔不回调，不能让 busy 一直卡住
+      const s = await Promise.race([segment(t, at0),
+        new Promise((_, bad) => setTimeout(() => bad(new Error("timeout")), 15000))]);
       if (t === trk) segs = segs.filter((x) => x.t1 > pos - 1).concat(s).slice(-3);
     } catch (_) { failUntil = Date.now() + 3000; }   // 读或解码失败：3 秒后再试
     busy = false;
@@ -257,7 +299,7 @@ const Rhythm = (() => {
 
   function frame() {
     raf = 0;
-    if (!on || !cv) return;
+    if (!active() || !cv) return;
     raf = requestAnimationFrame(frame);
     const now = performance.now();
     if (now - colorAt > 1000) { colorAt = now; color = getComputedStyle(cv).getPropertyValue("--text2").trim() || color; }
@@ -274,42 +316,60 @@ const Rhythm = (() => {
       bars[b] = t > bars[b] ? bars[b] + (t - bars[b]) * 0.7 : bars[b] * 0.86 + t * 0.14;   // 快起慢落
       if (bars[b] > 0.02) any = true;
     }
-    draw(any);
+    if (on && !big) draw(cv, g, any, 2, 3);       // 大频谱打开时，小格换回进度条，不画
+    if (big && bcv) draw(bcv, bg, any, 3, 5);
   }
 
-  /* LED 梯格频谱：每个频段一根细柱，柱子由一格格短横条叠成，单色；两声道都没声音时全部熄灭 */
-  function draw(any) {
-    const w = cv.clientWidth, h = cv.clientHeight, r = window.devicePixelRatio || 1;
+  /* LED 梯格频谱：每个频段一根细柱，柱子由一格格短横条叠成，单色；两声道都没声音时全部熄灭。
+     seg 为每格横条高，pitch 为格距（小格 2/3，大频谱 3/5） */
+  function draw(c, ctx, any, seg, pitch) {
+    const w = c.clientWidth, h = c.clientHeight, r = window.devicePixelRatio || 1;
     if (!w || !h) return;
-    if (cv.width !== Math.round(w * r) || cv.height !== Math.round(h * r)) { cv.width = Math.round(w * r); cv.height = Math.round(h * r); }
-    g.setTransform(r, 0, 0, r, 0, 0);
-    g.clearRect(0, 0, w, h);
+    if (c.width !== Math.round(w * r) || c.height !== Math.round(h * r)) { c.width = Math.round(w * r); c.height = Math.round(h * r); }
+    ctx.setTransform(r, 0, 0, r, 0, 0);
+    ctx.clearRect(0, 0, w, h);
     if (!any) return;
     const gap = Math.max(1, Math.round(w / NB * 0.35)), bw = (w - gap * (NB - 1)) / NB;
-    const seg = 2, pitch = 3, levels = Math.floor((h - 2) / pitch), base = h - 1;
+    const levels = Math.floor((h - 2) / pitch), base = h - 1;
     const snap = (v) => Math.round(v * r) / r;            // 对齐物理像素，横条边缘清楚
-    g.fillStyle = color;
+    ctx.fillStyle = color;
     for (let b = 0; b < NB; b++) {
       const n = Math.round(bars[b] * levels), x = snap(b * (bw + gap)), xw = Math.max(1 / r, snap(bw));
-      for (let k = 0; k < n; k++) g.fillRect(x, base - k * pitch - seg, xw, seg);
+      for (let k = 0; k < n; k++) ctx.fillRect(x, base - k * pitch - seg, xw, seg);
     }
   }
 
-  /* 不能显示的格式：这一格显示灰色「不可用」 */
-  function mark(na) { if (cv) cv.parentNode.classList.toggle("na", na); }
-
-  function setOn(v) {
-    on = !!v;
-    try { localStorage.setItem(KEY, on ? "1" : "0"); } catch (_) { /* 忽略 */ }
-    if (!cv) return;
-    cv.parentNode.classList.toggle("vu-on", on);
-    if (on) { load(); if (!raf) raf = requestAnimationFrame(frame); }
+  /* 不能显示的格式：这一格（和大频谱）显示灰色「不可用」 */
+  function mark(na) {
+    if (cv) cv.parentNode.classList.toggle("na", na);
+    if (bcv) bcv.parentNode.classList.toggle("na", na);
   }
-  function attach(canvas, pos) { cv = canvas; g = cv.getContext("2d"); getPos = pos; setOn(on); }
+
+  function save() {
+    try { localStorage.setItem(KEY, on ? "1" : "0"); localStorage.setItem(KEY_BIG, big ? "1" : "0"); } catch (_) { /* 忽略 */ }
+  }
+  /* 小格是否显示频谱（vu-on）、大频谱是否打开（big-on）；两者都关时停止取数 */
+  function apply() {
+    if (!cv) return;
+    cv.parentNode.classList.toggle("vu-on", on && !big);
+    if (bcv) bcv.parentNode.classList.toggle("big-on", big);
+    document.body.classList.toggle("bigvu-open", big);
+    if (active()) { load(); if (!raf) raf = requestAnimationFrame(frame); }
+  }
+  function setOn(v) { on = !!v; save(); apply(); }
+  /* 打开大频谱：小格换回进度条；关闭大频谱：小格也回到进度条（不再恢复频谱） */
+  function setBig(v) { big = !!v; if (big) on = false; save(); apply(); }
+  function attach(canvas, pos, bigCanvas) {
+    cv = canvas; g = cv.getContext("2d"); getPos = pos;
+    if (bigCanvas) { bcv = bigCanvas; bg = bcv.getContext("2d"); }
+    if (big) on = false;
+    apply();
+  }
 
   return {
-    attach, setTrack, setOn,
+    attach, setTrack, setOn, setBig,
     get on() { return on; },
+    get big() { return big; },
     setDelay: (s) => { delay = Number(s) || 0; },
   };
 })();
