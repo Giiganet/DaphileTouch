@@ -629,7 +629,6 @@ body.bigvu-open .picker { bottom: calc(226px + env(safe-area-inset-bottom, 0px))
 .cur-table tbody tr.swiping:nth-child(even), .cur-table tbody tr.swiping:nth-child(even) > td { background: var(--row); }
 .cur-table tbody tr.swiping > td { transform: translateX(var(--sx, 0px)); transition: transform .2s ease; }
 .cur-table tbody tr.swiping > td:last-child { position: relative; overflow: visible; }
-.list li[data-swipe] { position: relative; touch-action: pan-y; }
 .list li.swiping { background: var(--bg); transform: translateX(var(--sx, 0px)); transition: transform .2s ease; }
 .cur-table tbody tr.swiping > td:last-child::after, .list li.swiping::after {
   content: ""; position: absolute; top: 0; bottom: 0; left: 100%;
@@ -642,13 +641,6 @@ body.bigvu-open .picker { bottom: calc(226px + env(safe-area-inset-bottom, 0px))
 /* 拉够松手：停在原位整体淡出（连同红底），不再整行滑出露出整条红色 */
 .cur-table tbody tr.sw-del { opacity: 0; transition: opacity .18s ease; }
 .list li.sw-del { opacity: 0; transition: transform .2s ease, opacity .18s ease; }
-/* 喜爱页：左滑露出的是文字按钮「移出」，停住等点按；按下时加深 */
-.list li[data-swipe].swiping::after {
-  content: "移出"; display: flex; align-items: center; justify-content: center;
-  overflow: hidden; white-space: nowrap; color: #fff; font-size: 14px; font-weight: 600;
-  background-image: none;
-}
-.list li.sw-press::after { background-color: #d70015; }
 
 /* 加入中：当前播放标题行的转圈提示；被点的「整张加入」/「＋」变灰不可再点 */
 .cur-adding { display: inline-flex; align-items: center; gap: 6px; color: var(--accent); font-size: 13px; white-space: nowrap; animation: upd-in .2s ease-out; }
@@ -776,3 +768,63 @@ body.q-adding #cur-list .empty .e-add { display: inline-flex; align-items: cente
 .hover-glow.on { opacity: 1; }
 .hover-glow.jump { transition: opacity .12s ease; }
 @media (prefers-reduced-motion: reduce) { .hover-glow { transition: opacity .12s ease; } }
+
+/* ---------- CD播放器 ---------- */
+/* 侧栏入口：在主题开关上方，和上面的分类一样是一整行 */
+.nav-cd { margin: 0 0 6px; flex: none; }
+.nav-cd[hidden] { display: none; }
+/* 封面位置：查不到封面时是一张光盘图标；查到了换成图片 */
+.cd-art { display: flex; align-items: center; justify-content: center; overflow: hidden; }
+.cd-art svg { width: 46%; height: 46%; fill: none; stroke: var(--text3); stroke-width: 1.1; stroke-linecap: round; }
+.cd-art img { width: 100%; height: 100%; object-fit: cover; display: block; }
+/* 专辑区只有「整张加入」。「重新读取」（线框）和「弹出」（黑色实心）管的是光驱，放在窗口右上角、关闭键左边；
+   没检测到 CD 机时「弹出」灰色不可点，字样「无 CD 机」；读盘或仓门在动时两个都变淡、暂时不能点 */
+.cd-actions { flex-wrap: wrap; gap: 8px; }
+.cd-actions .pill, .cd-tools .pill { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
+.pill-line { background: transparent; color: var(--text); box-shadow: inset 0 0 0 1.5px var(--text3); }
+.cd-tools { display: inline-flex; align-items: center; gap: 8px; flex: none; margin: 0 2px 0 6px; }
+.cd-tools[hidden] { display: none; }
+.cd-tools .pill:disabled { opacity: .45; cursor: default; }
+.cd-tools .cd-eject.none:disabled { opacity: 1; background: var(--hover); color: var(--text3); }
+/* 读取中、没光驱、没放盘等提示：大光盘图标 + 一句标题 + 一句怎么办 */
+.cd-msg { display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 18% 20px 0; font-size: 14px; line-height: 1.5; }
+.pick-detail .cd-msg { padding-top: 18%; font-size: 14px; }
+.cd-msg b { font-size: 18px; font-weight: 600; color: var(--text); }
+.cd-msg > span { max-width: 30em; }
+.cd-big svg { width: 72px; height: 72px; fill: none; stroke: var(--text3); stroke-width: 1.1; stroke-linecap: round; display: block; }
+.cd-big.spin svg { animation: upd-spin 1.6s linear infinite; }
+.cd-note { margin: 0 0 12px; padding: 8px 12px; border-radius: 8px; background: var(--row); color: var(--text2); font-size: 12px; line-height: 1.5; }
+.tracks tr[data-cd] { cursor: pointer; }
+/* 当前播放列表里的 CD 曲目：封面位置是一块醒目的「CD」标记 */
+.cur-table .cv .cd-tag {
+  display: flex; align-items: center; justify-content: center;
+  background: var(--text); color: var(--bg);
+  font-size: 12px; font-weight: 800; letter-spacing: .04em; line-height: 1;
+}
+
+/* 播放条上的 CD 曲目：没有封面时方块里写「CD」，和播放列表里的标记一致 */
+.lcd-cover.cd-mark { display: flex; align-items: center; justify-content: center; background: var(--text); color: var(--bg); font-size: 14px; font-weight: 800; letter-spacing: .5px; }
+.lcd-cover.cd-mark::after { content: "CD"; }
+
+/* ---------- 我的喜爱：标题栏的「删除」键和选择状态 ---------- */
+.fav-tools { display: inline-flex; align-items: center; gap: 8px; flex: none; margin: 0 2px 0 6px; }
+.fav-tools[hidden] { display: none; }
+.fav-tools .pill { white-space: nowrap; }
+.fav-tools .pill:disabled { opacity: .45; cursor: default; }
+/* 和「＋ 整张加入」同一种实心按键。主键「删除」（带垃圾桶）黑底、宽度和「＋ 整张加入」一样；
+   选择状态下「全选」「取消」用稍浅的深灰，「删除（N）」变红 */
+.fav-tools .fav-main { display: inline-flex; align-items: center; justify-content: center; gap: 5px; min-width: 102px; }   /* 「＋ 整张加入」实测宽 101.6px */
+.fav-tools .fav-del { min-width: 114px; }   /* 「删除（N）」个位数时宽度不跳动 */
+.fav-tools .fav-main svg { flex: none; }
+.fav-tools .fav-b { background: #55555a; color: #fff; }
+:root[data-theme="dark"] .fav-tools .fav-b { background: #b4b4ba; color: #1c1c1e; }
+.fav-tools .fav-del { background: var(--danger); color: #fff; }
+/* 选择状态：每行前面一个圆圈，点行打勾 */
+.list.selecting li::before {
+  content: ""; width: 22px; height: 22px; border-radius: 50%; flex: none; margin-left: 2px;
+  box-shadow: inset 0 0 0 1.5px var(--text3);
+}
+.list.selecting li.sel::before {
+  box-shadow: none;
+  background: var(--danger) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='white' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 12.5l4 4 8-9'/%3E%3C/svg%3E") center / 14px no-repeat;
+}

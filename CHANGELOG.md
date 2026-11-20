@@ -3,6 +3,32 @@
 All notable changes to this project are documented here.
 Versions follow [Semantic Versioning](https://semver.org/).
 
+## [0.6.0] - 2026-11-20
+
+### Added
+- **CD player** (needs the LMS CDplayer plugin; tested with v1.11). `LMS.cdHas()` (`can cdplayer items ?`) runs at start; only then is the sidebar entry `#nav-cd` (above the theme switch) shown. View `cd` in `views.js`:
+  - `cdRead()` reads the plugin menu (`cdplayer items 0 120 menu:1`), prefers the list with track names and falls back to the raw track list; tracks are parsed from the `cdplay://` URLs (`cdTrack()`). Standard album page with **＋ 整张加入**; a track is added with `playlist add <cdplay url> <title>`. Rows already in the queue are greyed (`cdKey()` = track number + offset).
+  - Cover: the plugin has none, so the browser builds the TOC from the track offsets, asks MusicBrainz (`/ws/2/discid/-?toc=`) and takes the front image from the Cover Art Archive, only when the album title matches (or there is a single hit and no title). Results are cached in `localStorage` (`daphile.cdcover.<toc>`, and `daphile.cdcover.id.<discid>` for the player bar); 8 s timeout; a disc icon is shown otherwise.
+  - Header tools `#cd-tools` (top right of the library, CD view only): **重新读取** and **弹出**. Eject posts `drive=sr0&ACTION=Eject` to Daphile's own `/cgi-bin/CD%20Ripper` on port 80 (`mode: "no-cors"`), which toggles the tray both ways; the result is confirmed by polling the drive state. Fallback when the tray did not move: the plugin's eject via `playlist preview` of `cdplay://99?Command=eject` (opens only). Without a drive the button is disabled and reads **无 CD 机**.
+  - Errors are mapped from the plugin's `networkerror` text and drive status code (`cdError()`, `CD_ERR`): no drive (-1), no disc / tray open (1, 2), not ready (0, 3), data disc (101–104), drive in use, unreadable disc, track-name server unreachable or disc unknown (tracks listed by number, still playable). Status 0 arrives as `(0 but true)` (Perl ioctl) and is now parsed instead of falling through to “读取 CD 失败”.
+  - Tray states: opening shows only the spinning disc (`moving`) until the drive reports the tray open, then **请放入音乐CD**; closing shows **正在读盘...** at once. While waiting, the drive is polled every 1 s (empty / open) or 2 s (`cdWatch()`); a query that takes longer than 0.7 s means the plugin is already reading the TOC and looking up names, so the text changes to **正在获取CD信息...**. `cdSettle()` treats transient errors as “reading” for 40 s after the tray goes in (`CD_HOLD`) and “tray open” as “reading” for 6 s after a close command; after 40 s the disc is reported unreadable.
+  - The last successful read is kept in `cdKeep`: reopening the CD view does not touch the drive until eject, **重新读取** or a page reload.
+  - Queue rows of CD tracks show a **CD** tag in the cover column (`.cd-tag`, row class `is-cd`); the player bar and the track info panel show the cached cover or a **CD** mark (`isCd()`, `cdArt()`, `.cd-mark`).
+- **My Favorites**: header tools `#fav-tools` with one **删除** button (bin icon, same style and width as **＋ 整张加入**). It switches the list to selection mode (`.list.selecting`, rows toggle `.sel`, taps neither add tracks nor open folders) and the header to **全选 / 全不选**, **取消** and a red **删除（N）**. Deleting asks through `ask()`; `favRemove()` re-reads the list first and aborts if a picked item no longer matches by name and URL, then deletes from the highest index down, because LMS renumbers the following items after every `favorites delete`. Works inside favorite folders (`<folder>.<item>` indexes).
+
+### Changed
+- Previous / next buttons: a triangle with a bar instead of two triangles.
+- `poll()` sends only one `status` request at a time; a reply to a request sent before the latest command (`S.cmdAt`) is discarded.
+- `paged()`: a page that arrives after the view has changed no longer writes its count into the header.
+
+### Removed
+- Swipe-left to remove in My Favorites (`data-swipe` rows, the red **移出** button and its styles). It competed with swipe-left to close the library; `bindSwipeClose` no longer has to skip those rows.
+
+### Fixed
+- Spectrum stutter on iPhone and Mac: the FFT (`specCore()`) now runs in a Web Worker created from a Blob, with a fallback to the main thread; segments are decoded in an `OfflineAudioContext` at the file's own sample rate, so nothing is resampled.
+- Play / pause button jumping back after a tap: the button, progress and spectrum switch optimistically on tap, and stale poll replies are ignored (see `poll()` above).
+- DTS streams wrapped in WAV / FLAC (DTS-CD rips) showed a staircase of noise: `isDts()` looks for repeating DTS sync words (14-bit `1FFF E800`, 16-bit `7FFE 8001`) in the first 2 s and marks the spectrum “不可用”.
+
 ## [0.5.1] - 2026-11-18
 
 ### Added

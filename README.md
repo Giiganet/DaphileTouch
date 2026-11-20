@@ -8,7 +8,8 @@ A touch-friendly web player for [Daphile](https://www.daphile.com/) / [Lyrion Mu
 
 - Now Playing queue: long-press to reorder, swipe left to remove, clear, save as a new playlist
 - Library: Search, Recently Added, Artists, Albums, Songs, Folders, Playlists, Favorites
-- Add tracks or whole albums to the end of the queue; heart to add/remove favorites
+- Add tracks or whole albums to the end of the queue; heart to add/remove favorites; remove several favorites at once with Delete and Select all
+- CD player (with the LMS CDplayer plugin): the disc in the drive as an album page, eject / close tray on Daphile, CD tracks marked in the queue
 - Output device picker (any LMS player, including AirPlay devices through the AirPlay Bridge plugin)
 - Mute button that is greyed out for fixed-volume (bit-perfect) players
 - Light / dark theme switch

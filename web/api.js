@@ -157,5 +157,41 @@ const LMS = (() => {
     fileInfo: async (trackId) => ({ id: trackId, ...(((await q(["titles", 0, 1, "track_id:" + trackId, "tags:uofrdT"])).titles_loop || [])[0] || {}) }),
     trackUrl: async (trackId) => ((await q(["titles", 0, 1, "track_id:" + trackId, "tags:u"])).titles_loop || [])[0] || {},
     search: (term) => q(["search", 0, 30, "term:" + term]),
+
+    /* ---------- CD（靠 LMS 的 CDplayer 插件：读盘、查曲名、cdplay:// 播放都在插件里） ---------- */
+    /* 插件在不在：can 是只读查询，在 = 1 */
+    cdHas: async () => Number((await q(["can", "cdplayer", "items", "?"]))._can) === 1,
+    /* 读盘菜单：不带 itemId 会让光驱读一次目录（几秒），带 itemId 只读插件已有的结果。
+       出错时结果里是 networkerror（文字后面括号里是光驱状态码），count 为 0 */
+    cdItems: (itemId) => p(["cdplayer", "items", 0, 120, "menu:1", ...(itemId ? ["item_id:" + itemId] : [])]),
+    /* 把一首 CD 曲目（cdplay://轨号?…）加到当前播放末尾 */
+    cdAdd: (url, title) => p(["playlist", "add", url, title || ""]),
+    /* 弹出（仓门开着就关，关着就开）：借用 Daphile 系统自带「CD Ripper」页上的 Eject 按钮，它两个方向都能动。
+       那个页面在主机的 80 端口，和 LMS 不同源，只能发出去、读不到回应，结果靠随后再查光驱状态来确认。
+       drive 固定 sr0（Daphile 给第一台光驱起的名字） */
+    cdTray: async () => {
+      const host = BASE ? (await q(["serverstatus", 0, 0])).ip : location.hostname;   // 开发预览时页面在本机，要问 LMS 它自己的地址
+      if (!host) throw new Error("不知道 Daphile 主机的地址");
+      await fetch(`http://${host}/cgi-bin/CD%20Ripper`, { method: "POST", mode: "no-cors", credentials: "include", body: new URLSearchParams({ drive: "sr0", ACTION: "Eject" }) });
+    },
+    cdStop: () => p(["stop"]),
+    /* 备用的出仓办法（只能开、不能关），上面那条路不通时才用（比如不是 Daphile 系统）。
+       插件只在「播放 cdplay://99?Command=eject」时才执行 eject，
+       所以用 LMS 的试听（preview）：先存下当前队列 → 播这条地址 → 再恢复队列。
+       wasCd：当前正在放 CD，先停掉（插件在 CD 播放中不会退盘），退盘后不再续播 */
+    cdEject: async (wasCd) => {
+      const st = await p(["status", "-", 1]);
+      const playing = st.mode === "play", t = Number(st.time || 0), seek = Number(st.can_seek);
+      const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+      if (wasCd) { await p(["stop"]); await wait(1200); }
+      await p(["playlist", "preview", "url:cdplay://99?Command=eject&TrackTitle=Eject%20CD&AlbumTitle=Eject%20CD", "title:Eject CD"]);
+      await wait(1500);
+      await p(["playlist", "preview", "cmd:stop"]);
+      if (playing && !wasCd) {
+        await wait(300);
+        await p(["play"]);
+        if (t > 1 && seek) await p(["time", String(t)]);
+      }
+    },
   };
 })();

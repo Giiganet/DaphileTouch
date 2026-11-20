@@ -1,6 +1,6 @@
 /* 节奏灯（频谱）：按播放进度分段读取当前曲目的音频文件，在本机解码做 FFT，
    左右声道合成一组频谱柱（任一声道有声就亮，两声道都静音才不亮），画在进度条那一格。
-   支持 FLAC / WAV / MP3（含 CUE 分轨）；ALAC、AAC、APE、DSD 等格式不显示。
+   支持 FLAC / WAV / MP3（含 CUE 分轨）；ALAC、AAC、APE、DSD 等格式，以及装着 DTS 码流的 WAV / FLAC 不显示。
    每次只读当前位置往后约 8 秒（FLAC 约 1 MB），不整首下载。 */
 const Rhythm = (() => {
   const KEY = "daphile.vu";
@@ -73,6 +73,7 @@ const Rhythm = (() => {
       }
       if (!t.fmt || !t.start) throw new Error("bad wav");
       t.align = t.fmt[20] | (t.fmt[21] << 8);
+      t.rate = u32le(t.fmt, 12);
       t.bps = u32le(t.fmt, 16);
     } else if (t.type === "mp3") {
       const h = await range(url, 0, 9);
@@ -129,11 +130,26 @@ const Rhythm = (() => {
     return -1;
   }
 
-  function decode(bytes) {
-    ac = ac || new (window.AudioContext || window.webkitAudioContext)();
-    return new Promise((ok, bad) => {
-      const p = ac.decodeAudioData(bytes.buffer, ok, bad);
+  /* 按文件本身的采样率解码（离线上下文，不出声）：不做重采样，采样值和文件里一模一样，
+     DTS 检测才认得出同步字；也省掉一次重采样。建不起来（旧浏览器）才用普通 AudioContext */
+  const offs = {};
+  function ctxFor(rate) {
+    const O = window.OfflineAudioContext || window.webkitOfflineAudioContext;
+    if (rate && O && offs[rate] !== false) {
+      try { return offs[rate] || (offs[rate] = new O(2, 1, rate)); } catch (_) { offs[rate] = false; }
+    }
+    return ac || (ac = new (window.AudioContext || window.webkitAudioContext)());
+  }
+  function decode(bytes, rate) {
+    const run = (c, data) => new Promise((ok, bad) => {
+      const p = c.decodeAudioData(data, ok, bad);
       if (p && p.catch) p.catch(bad);
+    });
+    const c = ctxFor(rate);
+    if (c === ac) return run(c, bytes.buffer);
+    return run(c, bytes.slice().buffer).catch(() => {        // 离线上下文解不了就退回普通的
+      offs[rate] = false;
+      return run(ctxFor(0), bytes.buffer);
     });
   }
 
@@ -182,52 +198,72 @@ const Rhythm = (() => {
         if (k < 0) throw new Error("no mp3 frame");
         bytes = data.slice(k); t0 = (a + k - t.start) / t.bps;
       }
-      const buf = await decode(bytes);
+      const buf = await decode(bytes, t.rate);
+      if (isDts(buf)) { const e = new Error("dts"); e.dts = true; throw e; }
       const t1 = t0 + buf.duration;
       if (t.type === "flc" && (abs < t0 - 0.3 || abs > t1 - 0.5)) {
         // 落点偏了（VBR 码率前后不均）：按这一段的实际码率，从已知帧位置推算目标位置再读
         a = Math.floor(a + (abs - 1 - t0) * rate);
         continue;
       }
-      return { t0: t0 - t.off, t1: t1 - t.off, sp: spectrum(buf) };
+      return { t0: t0 - t.off, t1: t1 - t.off, sp: await spectrum(buf) };
     }
     throw new Error("seek miss");
+  }
+
+  /* DTS 音轨（DTS-CD 抓下来的 WAV / FLAC）：文件里装的是 DTS 5.1 码流，只是外面套了 PCM 的壳，
+     交给支持 DTS 的功放（经光纤 / 同轴）才解码出声音；当 PCM 直接算频谱只会得到一片噪声（左低右高的阶梯）。
+     判断：16 位采样流里反复出现 DTS 同步字，且间隔相同（14 位打包 1FFF E800，16 位 7FFE 8001），只看前 2 秒 */
+  function isDts(buf) {
+    const nc = Math.min(2, buf.numberOfChannels), n = Math.min(buf.length, Math.round(buf.sampleRate * 2));
+    const ch = []; for (let c = 0; c < nc; c++) ch.push(buf.getChannelData(c));
+    const at = (k) => Math.round(ch[k % nc][Math.floor(k / nc)] * 32768);   // 交错后的第 k 个 16 位采样
+    const hits = [];
+    for (let k = 0; k + 1 < n * nc && hits.length < 4; k++) {
+      const a = at(k);
+      if (a !== 8191 && a !== 32766) continue;
+      const b = at(k + 1);
+      if ((a === 8191 && b === -6144) || (a === 32766 && b === -32767)) hits.push(k);
+    }
+    if (hits.length < 3) return false;
+    const d = hits[1] - hits[0];
+    return d > 0 && hits.every((h, i) => !i || h - hits[i - 1] === d);
   }
 
   /* ---------- 频谱 ----------
      每 1/FPS 秒取一个窗口做 FFT，FMIN–FMAX（50 Hz–16 kHz）按对数分成 NB 段；
      左右声道各算一遍，每段取较大的那个（任一声道有声即亮，都静音才不亮）。
-     结果按 0–255 存成 Uint8Array（每帧 NB 个值）。 */
-  const tables = {};
-  function table(N) {
-    if (tables[N]) return tables[N];
-    const cos = new Float32Array(N / 2), sin = new Float32Array(N / 2), win = new Float32Array(N), rev = new Uint32Array(N);
-    for (let i = 0; i < N / 2; i++) { cos[i] = Math.cos(2 * Math.PI * i / N); sin[i] = -Math.sin(2 * Math.PI * i / N); }
-    for (let i = 0; i < N; i++) win[i] = 0.5 - 0.5 * Math.cos(2 * Math.PI * i / (N - 1));   // 汉宁窗
-    for (let i = 0, j = 0; i < N; i++) {
-      rev[i] = j;
-      let bit = N >> 1; while (j & bit) { j ^= bit; bit >>= 1; } j |= bit;
+     结果按 0–255 存成 Uint8Array（每帧 NB 个值）。
+     specCore 只用自己的参数，不引用外面的变量：整段源码会原样放进后台线程（Worker）里运行。 */
+  function specCore(chs, sr, len, P) {
+    const { NB, FMIN, FMAX, DBMIN, DBMAX, FPS } = P;
+    const tables = specCore.tables || (specCore.tables = {});
+    let N = 1024; while (N < sr / 21) N *= 2;                 // 频率分辨率约 20 Hz（44.1k 为 2048 点）
+    let T = tables[N];
+    if (!T) {
+      const cos = new Float32Array(N / 2), sin = new Float32Array(N / 2), win = new Float32Array(N), rev = new Uint32Array(N);
+      for (let i = 0; i < N / 2; i++) { cos[i] = Math.cos(2 * Math.PI * i / N); sin[i] = -Math.sin(2 * Math.PI * i / N); }
+      for (let i = 0; i < N; i++) win[i] = 0.5 - 0.5 * Math.cos(2 * Math.PI * i / (N - 1));   // 汉宁窗
+      for (let i = 0, j = 0; i < N; i++) {
+        rev[i] = j;
+        let bit = N >> 1; while (j & bit) { j ^= bit; bit >>= 1; } j |= bit;
+      }
+      T = tables[N] = { cos, sin, win, rev };
     }
-    return (tables[N] = { cos, sin, win, rev });
-  }
-  function fft(re, im, T) {
-    const N = re.length;
-    for (let i = 0; i < N; i++) { const j = T.rev[i]; if (j > i) { let x = re[i]; re[i] = re[j]; re[j] = x; x = im[i]; im[i] = im[j]; im[j] = x; } }
-    for (let size = 2; size <= N; size <<= 1) {
-      const half = size >> 1, step = N / size;
-      for (let s = 0; s < N; s += size) {
-        for (let k = 0; k < half; k++) {
-          const c = T.cos[k * step], si = T.sin[k * step], a = s + k, b = a + half;
-          const xr = re[b] * c - im[b] * si, xi = re[b] * si + im[b] * c;
-          re[b] = re[a] - xr; im[b] = im[a] - xi; re[a] += xr; im[a] += xi;
+    const fft = (re, im) => {
+      for (let i = 0; i < N; i++) { const j = T.rev[i]; if (j > i) { let x = re[i]; re[i] = re[j]; re[j] = x; x = im[i]; im[i] = im[j]; im[j] = x; } }
+      for (let size = 2; size <= N; size <<= 1) {
+        const half = size >> 1, step = N / size;
+        for (let s = 0; s < N; s += size) {
+          for (let k = 0; k < half; k++) {
+            const c = T.cos[k * step], si = T.sin[k * step], a = s + k, b = a + half;
+            const xr = re[b] * c - im[b] * si, xi = re[b] * si + im[b] * c;
+            re[b] = re[a] - xr; im[b] = im[a] - xi; re[a] += xr; im[a] += xi;
+          }
         }
       }
-    }
-  }
-  function spectrum(buf) {
-    const sr = buf.sampleRate;
-    let N = 1024; while (N < sr / 21) N *= 2;                 // 频率分辨率约 20 Hz（44.1k 为 2048 点）
-    const T = table(N), hop = sr / FPS, n = Math.floor(buf.length / hop);
+    };
+    const hop = sr / FPS, n = Math.floor(len / hop);
     const out = new Uint8Array(n * NB), re = new Float32Array(N), im = new Float32Array(N);
     const lo = [], hi = [], tilt = [], ref = 10 * Math.log10((N / 4) * (N / 4));   // 满幅正弦 = 0 dB
     for (let b = 0; b < NB; b++) {
@@ -235,12 +271,11 @@ const Rhythm = (() => {
       lo[b] = Math.max(1, Math.round(f0 * N / sr)); hi[b] = Math.max(lo[b] + 1, Math.round(f1 * N / sr));
       tilt[b] = 3 * Math.log2(Math.sqrt(f0 * f1) / 1000);     // 高频每倍频程补 3 dB，看起来更均匀
     }
-    for (let c = 0; c < buf.numberOfChannels; c++) {
-      const x = buf.getChannelData(c);
+    for (const x of chs) {
       for (let k = 0; k < n; k++) {
         const s0 = Math.round(k * hop + hop / 2 - N / 2);
         for (let i = 0; i < N; i++) { const j = s0 + i; re[i] = j >= 0 && j < x.length ? x[j] * T.win[i] : 0; im[i] = 0; }
-        fft(re, im, T);
+        fft(re, im);
         for (let b = 0; b < NB; b++) {
           let p = 0;
           for (let i = lo[b]; i < hi[b]; i++) { const q = re[i] * re[i] + im[i] * im[i]; if (q > p) p = q; }
@@ -252,6 +287,46 @@ const Rhythm = (() => {
       }
     }
     return out;
+  }
+  const SPEC_P = { NB, FMIN, FMAX, DBMIN, DBMAX, FPS };
+
+  /* 后台线程算频谱：一段 8 秒约 480 次 FFT（高采样率每次 8192–16384 点），iPad 上要 0.3–0.6 秒。
+     放在主线程算时这段时间页面完全停住——频谱定格、按键没反应，每读一段（2–8 秒）就卡一下。
+     Worker 用 Blob 生成，不另加文件；建不起来（极旧浏览器）才退回主线程计算。 */
+  let worker = null, wSeq = 0;
+  const wWait = new Map();
+  function getWorker() {
+    if (worker !== null) return worker;
+    try {
+      const src = `const specCore = ${specCore.toString()};
+        onmessage = (e) => { const { id, chs, sr, len, P } = e.data;
+          try { const out = specCore(chs, sr, len, P); postMessage({ id, out }, [out.buffer]); }
+          catch (err) { postMessage({ id, err: String(err) }); } };`;
+      worker = new Worker(URL.createObjectURL(new Blob([src], { type: "text/javascript" })));
+      worker.onmessage = (e) => {
+        const w = wWait.get(e.data.id); if (!w) return;
+        wWait.delete(e.data.id);
+        if (e.data.err) w.bad(new Error(e.data.err)); else w.ok(e.data.out);
+      };
+      worker.onerror = () => {                       // 后台线程出错：以后都在主线程算
+        wWait.forEach((w) => w.bad(new Error("worker"))); wWait.clear();
+        try { worker.terminate(); } catch (_) { /* 忽略 */ }
+        worker = false;
+      };
+    } catch (_) { worker = false; }
+    return worker;
+  }
+  function spectrum(buf) {
+    // 复制出各声道采样（AudioBuffer 自己的数组不能转交给后台线程）
+    const chs = [];
+    for (let c = 0; c < buf.numberOfChannels; c++) chs.push(buf.getChannelData(c).slice(0));
+    const w = getWorker();
+    if (!w) return Promise.resolve(specCore(chs, buf.sampleRate, buf.length, SPEC_P));
+    return new Promise((ok, bad) => {
+      const id = ++wSeq;
+      wWait.set(id, { ok, bad });
+      w.postMessage({ id, chs, sr: buf.sampleRate, len: buf.length, P: SPEC_P }, chs.map((x) => x.buffer));
+    });
   }
 
   let segs = [], curId = null, want = null, color = "#6e6e73", colorAt = 0;
@@ -285,7 +360,10 @@ const Rhythm = (() => {
       const s = await Promise.race([segment(t, at0),
         new Promise((_, bad) => setTimeout(() => bad(new Error("timeout")), 15000))]);
       if (t === trk) segs = segs.filter((x) => x.t1 > pos - 1).concat(s).slice(-3);
-    } catch (_) { failUntil = Date.now() + 3000; }   // 读或解码失败：3 秒后再试
+    } catch (e) {
+      if (e && e.dts) { if (t === trk) { trk = null; mark(true); } }   // DTS 音轨：显示「不可用」，这首不再取数
+      else failUntil = Date.now() + 3000;                              // 读或解码失败：3 秒后再试
+    }
     busy = false;
   }
   /* 取当前位置那一帧的 NB 个频段值（0–255），没有数据返回 null */

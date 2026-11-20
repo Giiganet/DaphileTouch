@@ -7,7 +7,7 @@ const fmtTime = (s) => {
   return h ? `${h}:${String(m).padStart(2, "0")}:${sec}` : `${m}:${sec}`;
 };
 
-const S = { st: null, cur: null, polledAt: 0, seeking: false, queueKey: "", fails: 0 };
+const S = { st: null, cur: null, polledAt: 0, seeking: false, queueKey: "", fails: 0, cmdAt: 0 };
 
 function toast(msg) {
   const t = $("toast");
@@ -17,9 +17,10 @@ function toast(msg) {
   toast._t = setTimeout(() => (t.hidden = true), 2200);
 }
 
-/* 执行命令后立刻刷新一次状态 */
+/* 执行命令后立刻刷新一次状态；命令返回前发出的轮询结果作废（见 poll） */
 async function act(fn, errMsg = "操作失败") {
   try { await fn(); } catch (e) { toast(errMsg + "：" + e.message); }
+  S.cmdAt = Date.now();
   setTimeout(poll, 150);
 }
 
@@ -86,14 +87,16 @@ function render() {
     $("lcd-title").textContent = cur.title || "未知曲目";
     $("lcd-sub").textContent = [cur.artist, cur.album].filter(Boolean).join(" — ");
     const cid = coverOf(cur);
-    const src = cid ? LMS.cover(cid, 100) : "";
+    const src = cid ? LMS.cover(cid, 100) : cdArt(cur);
     const img = $("lcd-cover");
     if (img.dataset.src !== src) { img.dataset.src = src; if (src) img.src = src; }
     img.hidden = !src;   // 没封面时隐藏图片，露出外框的灰色圆角方块
+    img.parentNode.classList.toggle("cd-mark", isCd(cur) && !src);   // CD 曲目又没封面：方块里写「CD」
   } else {
     $("lcd-title").textContent = loop.length ? "" : "未在播放";
     $("lcd-sub").textContent = "";
     $("lcd-cover").hidden = true;
+    $("lcd-cover").parentNode.classList.remove("cd-mark");
   }
   renderTime();
   if (typeof Rhythm !== "undefined") Rhythm.setTrack(cur ? cur.id : null);
@@ -128,7 +131,10 @@ async function syncRhythmDelay() {
    没有封面（coverart=0）：不请求，显示灰色圆角方块；
    请求失败（文件丢失、NAS 未开等）：换成透明图，露出图片自身的灰色圆角底色。 */
 const BLANK = "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7";
-const coverOf = (t) => (t && Number(t.coverart) !== 0 ? t.coverid || t.artwork_track_id || null : null);
+const isCd = (t) => !!t && /^cdplay:/.test(t.url || "");   // CDplayer 插件的曲目地址
+const coverOf = (t) => (t && !isCd(t) && Number(t.coverart) !== 0 ? t.coverid || t.artwork_track_id || null : null);
+/* CD 曲目的封面：CD 页查到封面后按光盘编号记在本机（views.js 的 cd()），这里取出来给播放条和「正在播放」用；没有就显示「CD」字样 */
+const cdArt = (t) => { if (!isCd(t)) return ""; const m = /[?&]CDDBDiscid=([0-9a-f]+)/i.exec(t.url); try { return (m && localStorage.getItem("daphile.cdcover.id." + m[1])) || ""; } catch (_) { return ""; } };
 document.addEventListener("error", (e) => {
   const img = e.target;
   // 只处理已在页面上的图片；文件夹行首的封面是加载成功才插入的，失败时保留光盘图标
@@ -143,9 +149,11 @@ function renderNowPlaying(cur) {
   S.npKey = key;
   const img = $("np-art");
   const coverId = coverOf(cur);   // 没封面时显示 #np-art-empty（灰色圆角方块）
-  img.hidden = !coverId;
-  $("np-art-empty").hidden = !!coverId;
-  if (coverId) img.src = LMS.cover(coverId, 300);
+  const art = coverId ? LMS.cover(coverId, 300) : cdArt(cur);
+  img.hidden = !art;
+  $("np-art-empty").hidden = !!art;
+  $("np-art-empty").textContent = isCd(cur) && !art ? "CD" : "";
+  if (art) img.src = art;
   $("np-title").textContent = cur ? cur.title || "未知曲目" : "未在播放";
   $("np-artist").textContent = cur && !JUNK.has(cur.artist || "") ? cur.artist : "";
   $("np-fmt").innerHTML = cur ? fmtChips(cur).map((x) => `<span>${esc(x)}</span>`).join("") : "";
@@ -317,29 +325,40 @@ function renderQueue(loop, curIdx) {
     const i = Number(t["playlist index"]);
     const cls = i === curIdx ? "playing" : i < curIdx ? "past" : "";
     const cid = coverOf(t);
-    return `<tr class="${cls}" data-idx="${i}">
+    const cd = isCd(t);   // CD 曲目：封面位置换成醒目的「CD」标记
+    return `<tr class="${cls}${cd ? " is-cd" : ""}" data-idx="${i}">
       <td class="num">${i === curIdx ? QMARK[mode] : i + 1}</td>
-      <td class="cv">${cid ? `<img src="${LMS.cover(cid, 100)}" alt="" loading="lazy">` : `<span class="ph"></span>`}</td>
+      <td class="cv">${cd ? `<span class="ph cd-tag" aria-label="CD 曲目">CD</span>` : cid ? `<img src="${LMS.cover(cid, 100)}" alt="" loading="lazy">` : `<span class="ph"></span>`}</td>
       <td>${esc(t.title)}</td><td>${esc(t.artist || "")}</td><td>${esc(t.album || "")}</td>
       <td class="dur">${t.duration ? fmtTime(t.duration) : ""}</td>
     </tr>`;
   }).join("")}</tbody></table>`;
 }
 
+/* 轮询：同一时间只发一个 status 请求（正在等回复时又被叫到，就等这次回来后立刻再查一次）。
+   发出时间早于最近一次按键命令的回复一律丢掉——那是命令生效前的旧状态，
+   套用上去会让刚按下的播放 / 暂停键先跳回原样，下一秒才变过来，看起来像「滞后」。 */
 async function poll() {
   clearTimeout(poll._t);
+  if (poll.busy) { poll.again = true; return; }
+  poll.busy = true; poll.again = false;
+  const sentAt = Date.now();
   try {
-    S.st = await LMS.status();
-    S.polledAt = Date.now();
+    const st = await LMS.status();
     S.fails = 0;
-    render();
-    checkAdding();
+    if (sentAt >= S.cmdAt) {
+      S.st = st;
+      S.polledAt = Date.now();
+      render();
+      checkAdding();
+    }
   } catch (e) {
     S.fails++;
     if (S.fails === 3 && !Upd.since) { toast("与 Daphile 失去连接，正在重试…"); }   // 重启 LMS 期间不提示
   }
+  poll.busy = false;
   // 页面在后台时降低频率
-  poll._t = setTimeout(poll, document.hidden ? 5000 : 1000);
+  poll._t = setTimeout(poll, poll.again ? 0 : document.hidden ? 5000 : 1000);
 }
 
 /* ---------- 插件更新提示（侧栏左下，主题开关上方） ----------
@@ -631,10 +650,23 @@ function bindTheme() {
 }
 
 function bindPlayer() {
-  $("btn-play").onclick = () => act(async () => {
-    if (S.st && Number(S.st.power) !== 1) await LMS.power(1);
-    await (S.st && S.st.mode === "stop" ? LMS.play() : LMS.toggle());
-  });
+  $("btn-play").onclick = () => {
+    // 先在界面上切换（按键图标、进度走停、频谱），不等 LMS 回复；命令失败时下一次轮询会改回真实状态
+    const st = S.st;
+    const wasOff = st && Number(st.power) !== 1, wasStop = st && st.mode === "stop";
+    if (st && !wasOff && (S.cur || wasStop)) {
+      const now = Date.now();
+      if (st.mode === "play") st.time = Number(st.time || 0) + (now - S.polledAt) / 1000;
+      S.polledAt = now;
+      st.mode = st.mode === "play" ? "pause" : "play";
+      S.cmdAt = now;                // 在这之前发出、还没回来的轮询作废
+      render();
+    }
+    act(async () => {
+      if (wasOff) await LMS.power(1);
+      await (wasStop ? LMS.play() : LMS.toggle());
+    });
+  };
   // 静音不用 LMS 的 muting（RaopBridge 1.8.12 下 AirPlay 设备会出错），改为：记住音量 → 设 0；取消时恢复
   $("btn-mute").onclick = () => act(async () => {
     const key = "daphile.mutevol." + LMS.playerId;
@@ -1063,6 +1095,8 @@ async function start() {
   fitPlayer();
   document.addEventListener("visibilitychange", () => { if (!document.hidden) poll(); });
   if (typeof Views !== "undefined") Views.init();
+  // CD播放器入口：LMS 装了 CDplayer 插件才显示（只读查询，查不到就一直不显示）
+  LMS.cdHas().then((has) => { $("nav-cd").hidden = !has; }).catch(() => {});
 }
 
 start();

@@ -18,7 +18,7 @@ const Views = (() => {
   }
   /* 数量：和名称分开，灰色靠右。分类总数放窗口顶部（setCount），详情里的数量放详情标题行（setTitle 第二个参数） */
   const UNIT = { albums: "张", recent: "张", artists: "位", songs: "首",
-    folders: "项", playlists: "个", favorites: "项" };
+    folders: "项", playlists: "个", favorites: "项", cd: "首" };
   const fmtCount = (n, unit) => (n === undefined || n === null || n === "") ? "" : `${n} ${unit || ""}`.trim();
   const setCount = (n) => {
     document.getElementById("pick-count").textContent = fmtCount(n, UNIT[rootView]);
@@ -34,7 +34,7 @@ const Views = (() => {
   const pickList = () => document.getElementById("pick-list");
   const TWO = new Set(["artists", "playlists"]);
   const CAT = { albums: "专辑", recent: "最近添加", artists: "艺人", songs: "歌曲",
-    folders: "文件夹", playlists: "播放列表", favorites: "我的喜爱", search: "搜索" };
+    folders: "文件夹", playlists: "播放列表", favorites: "我的喜爱", search: "搜索", cd: "CD播放器" };
   let listPager = null;      // 左栏的分页加载器
   let pickedAt = -1;         // 最近一次在左栏点选条目的时刻（performance.now）
   const cols = () => document.querySelector(".picker-cols");
@@ -64,7 +64,7 @@ const Views = (() => {
 
   /* ---------- 分页：滚动到底部自动加载下一页（root 为滚动容器，默认右栏） ---------- */
   function paged(fetchPage, renderItems, container, countLabel, root = content()) {
-    let start = 0, total = Infinity, busy = false;
+    let start = 0, total = Infinity, busy = false, dead = false;
     const sentinel = document.createElement("div");
     sentinel.className = "more-sentinel";
     container.after(sentinel);
@@ -74,6 +74,7 @@ const Views = (() => {
       busy = true;
       try {
         const r = await fetchPage(start, PAGE);
+        if (dead) return;   // 这一页回来时已经换到别的页面了：不要把这里的数量写到别的页面的标题栏上
         total = Number(r.count || 0);
         if (countLabel) countLabel(total);
         const html = renderItems(r, start);
@@ -86,7 +87,7 @@ const Views = (() => {
     }
     io.observe(sentinel);
     more();
-    return { stop: () => io.disconnect() };
+    return { stop: () => { dead = true; io.disconnect(); } };
   }
 
   function reset(html) {
@@ -167,9 +168,10 @@ const Views = (() => {
     });
   }
 
-  /* ---------- 喜爱：曲目行「＋」前面的心形，只用来添加 ----------
-     进入列表时一律灰色空心；点击先问 LMS：已在喜爱里 → 提示「已在喜爱列表中」；
-     不在 → 加入，这一行的心形变成实心红。移出喜爱只在「喜爱」页向左滑动。 */
+  /* ---------- 喜爱：曲目行「＋」前面的心形 ----------
+     进入列表时一律灰色空心；点击先问 LMS：已在喜爱里 → 提示「已在喜爱列表中」并变成实心红；
+     不在 → 加入，这一行的心形变成实心红。实心红再点一次 → 移出喜爱，变回空心。
+     成批移出喜爱在「我的喜爱」页标题栏的「删除」键（见 favorites()）。 */
   const HEART = `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 20.2C6.9 16.4 3.6 13.4 3.6 9.5 3.6 7 5.5 5.1 8 5.1c1.6 0 3.1.8 4 2.1.9-1.3 2.4-2.1 4-2.1 2.5 0 4.4 1.9 4.4 4.4 0 3.9-3.3 6.9-8.4 10.7z"/></svg>`;
   const favBtn = () => `<button class="fav-btn" data-fav aria-label="加入喜爱">${HEART}</button>`;
   function addFav(btn) {
@@ -257,7 +259,7 @@ const Views = (() => {
     //   单项（喜爱里的曲目）→ 没有「＋」，点整行加入
     const single = (it) => !it.track && it.add && !it.more;
     reset(items.length ? `<ul class="list" id="ls">${items.map((it, i) => `
-      <li data-i="${i}"${it.track ? ` data-id="${it.id}" data-title="${esc(it.name)}"` : ""}${it.swipe ? ` data-swipe="${esc(it.swipe)}" data-title="${esc(it.name)}"` : ""}>
+      <li data-i="${i}"${it.track ? ` data-id="${it.id}" data-title="${esc(it.name)}"` : ""}>
         ${it.lead || (it.thumb !== undefined ? thumb(it.thumb) : "")}
         <div class="grow">${esc(it.name)}${it.sub ? `<div class="sub">${esc(it.sub)}</div>` : ""}</div>
         ${it.track ? favBtn() : it.add && it.more ? plusBtn(`data-add="${i}"`) : ""}
@@ -488,6 +490,20 @@ const Views = (() => {
     bindTracks(() => {});
   }
 
+  /* 我的喜爱。删除不再用左滑（和「向左滑关闭窗口」抢手势），改成窗口标题栏的按键：
+     平时只有一个「删除」键（带垃圾桶图标）；点它进入选择状态：点行打勾，标题栏变成「全选」「取消」「删除（N）」，
+     点「删除（N）」弹窗确认后才删。没有「一键全部删除」，要全删就先点「全选」。
+     LMS 每删一项，后面的条目号都会往前挪，所以从号大的往号小的删；删之前再读一次列表核对，对不上就不删 */
+  const TRASH = `<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h16M9.5 7V4.5h5V7M6 7l1 13h10l1-13M10 11v5.5M14 11v5.5"/></svg>`;
+  const favKey = (f) => String(f.id).replace(/^[0-9a-f]{8}\./i, "");   // "e94ffc7d.8" → "8"；子目录里是 "3.2"
+  const favLast = (k) => Number(String(k).split(".").pop());
+  async function favRemove(arg, picks) {
+    const now = (await LMS.favorites(arg && arg.id)).loop_loop || [];
+    const map = new Map(now.map((f) => [favKey(f), f]));
+    if (picks.some((p) => { const f = map.get(p.key); return !f || f.name !== p.name || (f.url || "") !== p.url; })) throw new Error("喜爱列表刚刚有变化，请重新选择");
+    for (const p of [...picks].sort((a, b) => favLast(b.key) - favLast(a.key))) await LMS.favDelete(p.key);
+    return picks.length;
+  }
   async function favorites(arg) {
     const r = await LMS.favorites(arg && arg.id);
     // 行首：收藏夹用文件夹图标；曲目用专辑封面——image 为 music/<曲目id>/cover.png 时取该曲目封面，
@@ -497,9 +513,7 @@ const Views = (() => {
     const items = loop.map((f) => {
       const dir = Number(f.hasitems) > 0;
       return {
-        // 喜爱页本身不显示心形；曲目向左滑动即移出喜爱（失效条目也能这样删掉）
-        // f.id 形如 "e94ffc7d.8"：前面是会话号，后面才是删除要用的条目号（子目录里是 "3.2"）
-        name: f.name, id: f.id, more: dir, swipe: !dir && Number(f.isaudio) > 0 ? String(f.id).replace(/^[0-9a-f]+\./i, "") : "",
+        name: f.name, id: f.id, more: dir, key: favKey(f), url: f.url || "",
         ...(dir ? { lead: lead("folder") } : { thumb: coverFromImage(f.image) }),
         add: Number(f.isaudio) ? () => LMS.addFavorite(f.id) : null,
       };
@@ -507,6 +521,58 @@ const Views = (() => {
     list(arg ? arg.name : "", items, (f) => {
       if (f.more) open("favorites", { id: f.id, name: f.name });
     });
+    const me = current, mine = () => current === me;
+    const box = document.getElementById("fav-tools"), ul = document.getElementById("ls");
+    let selecting = false, busy = false;
+    const picked = () => (ul ? [...ul.querySelectorAll("li.sel")].map((li) => items[li.dataset.i]) : []);
+    const draw = () => {
+      const n = picked().length;
+      const all = !!items.length && n === items.length;
+      box.innerHTML = selecting
+        ? `<button class="pill fav-b" data-favpickall ${busy ? "disabled" : ""}>${all ? "全不选" : "全选"}</button>
+           <button class="pill fav-b" data-favcancel ${busy ? "disabled" : ""}>取消</button>
+           <button class="pill fav-main fav-del" data-favdo ${busy || !n ? "disabled" : ""}>${TRASH}删除${n ? `（${n}）` : ""}</button>`
+        : `<button class="pill fav-main" data-favsome ${busy || !items.length ? "disabled" : ""}>${TRASH}删除</button>`;
+    };
+    const select = (on) => {
+      selecting = on;
+      if (ul) { ul.classList.toggle("selecting", on); if (!on) ul.querySelectorAll("li.sel").forEach((li) => li.classList.remove("sel")); }
+      draw();
+    };
+    const run = async (job) => {
+      busy = true; draw();
+      try { const n = await job(); toast(`已从喜爱删除 ${n} 项`); } catch (e) { toast("删除失败：" + e.message); }
+      busy = false;
+      if (mine()) await go("favorites", arg);   // 删后 LMS 重新编号，整页重读
+    };
+    box.onclick = async (e) => {
+      const b = e.target.closest("button");
+      if (!b || b.disabled || !mine()) return;
+      if (b.hasAttribute("data-favsome")) return select(true);
+      if (b.hasAttribute("data-favcancel")) return select(false);
+      if (b.hasAttribute("data-favpickall")) {   // 全选；已经全选时再点就是全不选
+        const lis = [...ul.querySelectorAll("li[data-i]")], on = lis.some((li) => !li.classList.contains("sel"));
+        lis.forEach((li) => li.classList.toggle("sel", on));
+        return draw();
+      }
+      if (b.hasAttribute("data-favdo")) {
+        const picks = picked();
+        if (!picks.length) return;
+        const what = picks.length === 1 ? `「${picks[0].name}」` : picks.length === items.length ? `这里的全部 ${picks.length} 项` : `选中的 ${picks.length} 项`;
+        if (!await ask({ title: "从喜爱删除？", msg: `将把${what}从「我的喜爱」里删除。只是移出喜爱，不会删除音乐文件。`, ok: "删除", danger: true, icon: "trash" }) || !mine()) return;
+        return run(() => favRemove(arg, picks));
+      }
+    };
+    // 选择状态下点一行只打勾，不加入当前播放、不进入收藏夹
+    const base = content().onclick;
+    content().onclick = (e) => {
+      if (!selecting) return base && base(e);
+      const li = e.target.closest("li[data-i]");
+      if (!li || busy) return;
+      li.classList.toggle("sel");
+      draw();
+    };
+    draw();
   }
 
   /* ---------- 搜索（侧边栏「搜索」或顶部搜索框） ---------- */
@@ -536,7 +602,308 @@ const Views = (() => {
   }
 
   /* ---------- 路由 ---------- */
+  /* ---------- CD播放器（LMS 的 CDplayer 插件） ---------- */
+  /* 插件报错文字末尾括号里是光驱状态码：-1 打不开设备（没接光驱）、1 没放盘、2 仓门开着、3 没准备好、101–104 数据盘 */
+  const CD_ERR = {
+    "-1": ["nodrive", "没有检测到 CD 机", "请把光驱接到 Daphile 主机上，再点右上角「重新读取」。", -1],
+    "0": ["reading", "正在读盘...", ""],   // 光驱说不出自己的状态：仓门在走、刚收进去时都是这样
+    "1": ["empty", "请放入音乐CD", "读取到光盘会自动显示", 1],
+    "2": ["empty", "请放入音乐CD", "读取到光盘会自动显示", 2],
+    "3": ["reading", "正在读盘...", ""],
+  };
+  function cdError(msg) {
+    const m = /\((-?\d+)(?: but true)?\)\s*$/.exec(msg || ""), code = m ? m[1] : "";
+    if (CD_ERR[code]) return CD_ERR[code];
+    if (/^10[1-4]$/.test(code)) return ["nodisc", "这不是音乐 CD", "光驱里是数据光盘，放不了。请换一张音乐 CD。"];
+    if (/in use|another user/i.test(msg)) return ["busy", "CD 机正忙", "另一个设备正在读盘，等几秒再点右上角「重新读取」。"];
+    if (/failed to get response/i.test(msg)) return ["nodb", "连不上 CD 曲名服务器", ""];
+    if (/No CD in drive/i.test(msg)) return ["unread", "读不出这张光盘", "光盘可能放反了、太脏或有划痕。取出检查后再点右上角「重新读取」。"];
+    return ["fail", "读取 CD 失败", String(msg || "")];
+  }
+  /* 「01. 曲名 (4:52.65)」→ 曲名和秒数；曲目地址里带轨号、专辑名、艺人、每轨起点和长度（1/75 秒） */
+  function cdTrack(it, i) {
+    const url = (it.presetParams && it.presetParams.favorites_url) || "";
+    const qs = new URLSearchParams(url.split("?")[1] || "");
+    const m = /^(?:(\d+)\.\s*)?(.*?)\s*\((\d+):(\d+)(?:\.\d+)?\)\s*$/.exec(it.text || "");
+    const len = Number(qs.get("Lengths")) || 0;
+    return {
+      url, num: Number((/^cdplay:\/\/(\d+)/.exec(url) || [])[1]) || i + 1,
+      title: (qs.get("TrackTitle") || (m && m[2]) || it.text || "").trim(),
+      artist: (qs.get("TrackArtist") || qs.get("AlbumArtist") || "").trim(),
+      album: (qs.get("AlbumTitle") || "").trim(), albumArtist: (qs.get("AlbumArtist") || "").trim(),
+      duration: len ? len / 75 : m ? Number(m[3]) * 60 + Number(m[4]) : 0,
+      offset: Number(qs.get("Offsets")) || 0, len,
+    };
+  }
+
+  /* 读盘：返回 { ok, tracks, named, canEject } 或 { ok:false, err:[kind, 标题, 说明] }。
+     根菜单里：type=playlist 且不是「raw format」的是查到曲名的版本，raw 只有轨号，Eject 表示能退盘 */
+  async function cdRead() {
+    let r = await LMS.cdItems(), nodb = false;
+    // 曲名服务器连不上：插件整个报错，但光盘目录它已经读到了。带一个 item_id 再问一次，
+    // 插件就直接给出已有的结果（只有轨号的列表），CD 照样能放
+    if (r.networkerror && cdError(r.networkerror)[0] === "nodb") {
+      nodb = true;
+      r = await LMS.cdItems(Math.random().toString(16).slice(2, 10).padEnd(8, "0"));
+    }
+    const items = r.item_loop || [];
+    if (r.networkerror || !items.length) return { ok: false, err: cdError(r.networkerror || (nodb ? "failed to get response" : "")) };
+    const urlOf = (x) => (x.presetParams && x.presetParams.favorites_url) || "";
+    const canEject = items.some((x) => /Command=eject/.test(urlOf(x)));
+    const lists = items.filter((x) => x.type === "playlist");
+    const raw = lists.find((x) => /CD-RAW\.opml/.test(urlOf(x)));
+    const named = lists.find((x) => x !== raw);
+    if (!named && !raw) return { ok: false, canEject, err: cdError("No CD in drive") };
+    const read = async (x) => ((await LMS.cdItems(x.params.item_id)).item_loop || []).filter((t) => t.type === "audio").map(cdTrack);
+    // 带曲名的那一项要再向曲名服务器取一次曲目；取不到（断网、超时）就退回只有轨号的列表
+    let tracks = [], gotNames = false;
+    if (named) { try { tracks = await read(named); gotNames = tracks.length > 0; } catch (_) { /* 退回轨号列表 */ } }
+    if (!tracks.length && raw) { tracks = await read(raw); if (named) nodb = true; }
+    if (!tracks.length) return { ok: false, canEject, err: cdError("No CD in drive") };
+    return { ok: true, tracks, named: gotNames, canEject, nodb };
+  }
+
+  /* 封面：插件不给封面。用每轨起点拼出光盘目录，到 MusicBrainz 查这张盘，再从 Cover Art Archive 取正面图。
+     同一份目录可能对上几张不同的盘，所以只在专辑名对得上（或只有一个结果）时才用；查不到、连不上就显示光盘图标。
+     结果按目录记在 localStorage，同一张盘不重复查 */
+  async function cdCover(tracks, album) {
+    const last = tracks[tracks.length - 1];
+    if (!last || !last.len || !tracks[0].offset) return "";
+    const toc = [1, tracks.length, last.offset + last.len, ...tracks.map((t) => t.offset)].join("+");
+    const key = "daphile.cdcover." + toc;
+    try { const c = localStorage.getItem(key); if (c !== null) return c; } catch (_) { /* 记不住就每次查 */ }
+    const ctl = new AbortController(), tm = setTimeout(() => ctl.abort(), 8000);
+    let url = "";
+    try {
+      const res = await fetch(`https://musicbrainz.org/ws/2/discid/-?toc=${toc}&fmt=json&cdstubs=no`, { signal: ctl.signal });
+      if (!res.ok) return "";
+      const rel = ((await res.json()).releases || []).filter((x) => x["cover-art-archive"] && x["cover-art-archive"].front);
+      const norm = (s) => String(s || "").toLowerCase().replace(/[\s\p{P}]/gu, "");
+      const hit = rel.find((x) => album && norm(x.title) === norm(album)) || (rel.length === 1 && !album ? rel[0] : null);
+      if (hit) url = `https://coverartarchive.org/release/${hit.id}/front-500`;
+    } catch (_) { return ""; } finally { clearTimeout(tm); }
+    try { localStorage.setItem(key, url); } catch (_) { /* 同上 */ }
+    return url;
+  }
+
+  /* CD 页：标准专辑页样式 */
+  const DISC = `<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="2.6"/><path d="M12 6.2a5.8 5.8 0 0 1 5.8 5.8M6.2 12a5.8 5.8 0 0 0 5.8 5.8"/></svg>`;
+  const EJECT = `<svg viewBox="0 0 16 16" width="13" height="13" aria-hidden="true"><path d="M8 2.6 13.4 9H2.6z" fill="currentColor"/><path d="M2.8 12.4h10.4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>`;
+  /* 窗口右上角的两个按键（管的是光驱，不属于哪张专辑）：重新读取、弹出。
+     弹出：检测到 CD 机 → 黑色实心可点；没检测到 → 灰色不可点，字样换成「无 CD 机」。busy：读盘或仓门在动时两个都先不让点 */
+  const cdTools = (drive, busy) => {
+    const box = document.getElementById("cd-tools");
+    box.innerHTML = `<button class="pill pill-line" data-cdreload ${busy ? "disabled" : ""}>重新读取</button>
+      <button class="pill cd-eject${drive === false ? " none" : ""}" data-cdeject ${busy || drive === false ? "disabled" : ""}>${EJECT}${drive === false ? "无 CD 机" : "弹出"}</button>`;
+    box.onclick = (e) => {
+      const b = e.target.closest("button");
+      if (!b || b.disabled || !current || current.view !== "cd") return;
+      if (b.hasAttribute("data-cdreload")) { cdKeep = null; go("cd"); } else cdEject();
+    };
+  };
+  const cdMsg = (title, tip, spin) => `<div class="empty cd-msg"><span class="cd-big${spin ? " spin" : ""}">${DISC}</span>${title ? `<b>${esc(title)}</b>` : ""}${tip ? `<span>${esc(tip)}</span>` : ""}</div>`;
+  const cdKey = (url) => { const m = /^cdplay:\/\/(\d+)\?.*?Offsets=(\d+)/.exec(url || ""); return m ? m[1] + "@" + m[2] : ""; };
+  /* CD 页。读盘 → 显示；没有光盘（或仓门开着、正在读盘、光驱忙）时隔一秒再看一次，放进新光盘就自动读出来。
+     只在 CD 页开着、网页在前台时才看；光驱里没盘时这一问只查状态，不会让光驱转 */
+  let cdSeq = 0, cdTimer = 0, cdNow = null;
+  /* 暂存：读出来的这张 CD 记在 cdKeep 里，再打开 CD 页直接用它，不再让光驱读盘。
+     只在三种时候丢掉重读：按「弹出」、按「重新读取」、整个网页重新打开 */
+  let cdKeep = null;
+  const cdMine = (seq) => seq === cdSeq && current && current.view === "cd";
+  const cdLoad = async () => {
+    try { return await cdRead(); } catch (e) { return { ok: false, err: ["fail", "读取 CD 失败", "与 Daphile 的连接出了问题：" + e.message] }; }
+  };
+  const cdSame = (a, b) => !!a && !!b && a.ok === b.ok && (a.ok
+    ? a.named === b.named && a.nodb === b.nodb && a.tracks.length === b.tracks.length && a.tracks[0].url === b.tracks[0].url
+    : a.err[1] === b.err[1]);
+  /* 等待中的几种状态：empty 没盘或仓门开着、reading 正在读盘、busy 光驱被占用。这几种都接着查，其余的停下来等人处理 */
+  const cdWaits = (d) => !d.ok && (d.err[0] === "empty" || d.err[0] === "busy" || d.err[0] === "reading");
+  const READING = { ok: false, err: ["reading", "正在读盘...", ""] };
+  /* 入仓后分两段：先是光驱认盘（这时插件一问就回「没准备好」）→「正在读盘...」；
+     认好以后插件才去读目录、查曲名，这一问要好几秒才回 → 迟迟不回就是第二段，显示「正在获取CD信息...」 */
+  const GETTING = { ok: false, err: ["reading", "正在获取CD信息...", ""] };
+  /* 光驱刚收进去的头几十秒里，它还在转、在认盘，这时插件会报各种错（读不出、状态未知、读取失败），都不是真的。
+     cdHold：在这个时刻之前，这类报错一律当作「正在读盘」接着等；过了时限还报错才显示出来。
+     cdShut：按「弹出」关仓后的头几秒，仓门还没走到位，查到的「仓门开着」也当作「正在读盘」 */
+  const CD_HOLD = 40000;
+  let cdHold = 0, cdShut = 0, cdTok = 0;
+  const cdSettle = (d) => {
+    const now = Date.now();
+    if (d.ok) { cdHold = cdShut = 0; return d; }
+    const k = d.err[0];
+    if (k === "reading") {   // 一直「没准备好」超过时限：不再转了，说实话
+      if (!cdHold) cdHold = now + CD_HOLD;
+      return now < cdHold ? d : { ok: false, err: ["unread", "读不出这张光盘", "光驱一直没有准备好。光盘可能放反了、太脏或有划痕；取出检查后再点右上角「重新读取」。"] };
+    }
+    if (k === "empty") { if (now < cdShut) return READING; cdHold = cdShut = 0; return d; }
+    if (k === "nodb" || k === "nodisc" || d.err[3] === -1) return d;   // 这几种是确定的结果，不用等
+    return now < cdHold ? READING : d;
+  };
+  /* 只画提示（光盘图标 + 文字），不安排下一次查询 */
+  function cdPaint(d) {
+    cdNow = d; cdKeep = null;
+    const k = d.err[0];
+    const tip = k === "nodb" ? "光盘读到了，但连不上曲名服务器，轨号列表也没取到。请检查 Daphile 能不能上网，再点右上角「重新读取」。" : d.err[2];
+    document.getElementById("pick-count").textContent = "";
+    reset(cdMsg(d.err[1], tip, k === "reading" || k === "moving"));
+    content().onclick = null;
+  }
+  /* 没盘、仓门开着、正在读盘时每秒查一次（这时插件只看一眼光驱状态，毫秒级回话，光驱不会转）。
+     状态正常了插件才真去读盘，要好几秒才回话——所以这一问过了 0.7 秒还没回，就知道光驱已经收进去在读盘了，
+     马上把页面换成转动的光盘 */
+  function cdWatch(seq) {
+    clearTimeout(cdTimer);
+    const tok = ++cdTok;
+    cdTimer = setTimeout(async () => {
+      if (!cdMine(seq) || tok !== cdTok) return;
+      if (document.hidden || !pickerOpen()) return cdWatch(seq);
+      const was = cdNow;
+      const slow = setTimeout(() => {
+        if (!cdMine(seq) || tok !== cdTok || cdNow !== was || was === GETTING) return;
+        if (was.err[0] !== "reading") cdHold = Date.now() + CD_HOLD;
+        cdPaint(GETTING);
+      }, 700);
+      const raw = await cdLoad();
+      clearTimeout(slow);
+      if (!cdMine(seq) || tok !== cdTok) return;
+      // 刚才还是「没盘 / 仓门开着」，现在变成别的报错：光驱刚收进去，开始计「正在读盘」的宽限
+      if (was && !was.ok && was.err[0] === "empty" && !raw.ok && raw.err[0] !== "empty" && Date.now() > cdHold) cdHold = Date.now() + CD_HOLD;
+      const d = cdSettle(raw);
+      // 已经显示「正在获取CD信息」，这一问等了半天回来的是过渡性报错：不退回「正在读盘」，接着查
+      if (cdNow === GETTING && d === READING && raw.err[0] !== "reading") return cdWatch(seq);
+      if (cdSame(d, cdNow)) { cdNow = d; cdWatch(seq); } else cdShow(d, seq);
+    }, cdNow && !cdNow.ok && cdNow.err[0] === "empty" ? 1000 : 2000);
+  }
+  async function cd() {
+    const seq = ++cdSeq;
+    clearTimeout(cdTimer); cdTok++; cdNow = null;
+    setTitle("");
+    if (cdKeep) return cdShow(cdKeep, seq);
+    if (Date.now() > cdHold) cdHold = 0;
+    cdTools(null, true);
+    document.getElementById("pick-count").textContent = "";
+    reset(cdMsg(READING.err[1], "", true));
+    const slow = setTimeout(() => { if (cdMine(seq) && cdNow === null) reset(cdMsg(GETTING.err[1], "", true)); }, 700);
+    const d = await cdLoad();
+    clearTimeout(slow);
+    if (cdMine(seq)) cdShow(cdSettle(d), seq);
+  }
+  function cdShow(d, seq) {
+    cdNow = d;
+    cdKeep = d.ok ? d : null;
+    clearTimeout(cdTimer); cdTok++;
+    const drive = d.ok || d.err[0] !== "nodrive";
+    cdTools(drive, false);
+    if (!d.ok) {
+      cdPaint(d);
+    } else {
+      const t0 = d.tracks[0], total = d.tracks.reduce((s, t) => s + t.duration, 0);
+      const album = d.named ? t0.album || "音乐 CD" : "音乐 CD";
+      const note = d.nodb ? "连不上 CD 曲名服务器，先按轨号显示，CD 可以正常播放。请检查 Daphile 能不能上网，再点右上角「重新读取」。"
+        : d.named ? "" : "曲名库里没有查到这张光盘，按轨号显示。";
+      setCount(d.tracks.length);
+      reset(`
+        <div class="album-head">
+          <div class="art cd-art${d.cover ? " has" : ""}" id="cd-art">${d.cover ? `<img src="${esc(d.cover)}" alt="">` : DISC}</div>
+          <div style="min-width:0">
+            <h2>${esc(album)}</h2>
+            <div class="artist">${esc((d.named && t0.albumArtist) || "未知艺人")}</div>
+            <div class="meta">${d.tracks.length} 首 · ${fmtTime(total)}</div>
+            <div class="np-fmt"><span>CD</span><span>44.1 kHz</span><span>16 bit</span></div>
+            <div class="actions cd-actions"><button class="pill" data-cdall>＋ 整张加入</button></div>
+          </div>
+        </div>
+        ${note ? `<div class="cd-note">${esc(note)}</div>` : ""}
+        <table class="tracks"><thead><tr><th class="num">#</th><th>标题</th><th class="dur">时长</th></tr></thead><tbody>
+        ${d.tracks.map((t, i) => `<tr data-cd="${i}" data-cdkey="${esc(cdKey(t.url))}" data-title="${esc(d.named ? t.title : "第 " + t.num + " 轨")}">
+          <td class="num">${t.num}</td><td class="ttl">${esc(d.named ? t.title : "第 " + t.num + " 轨")}</td>
+          <td class="dur">${t.duration ? fmtTime(t.duration) : ""}</td></tr>`).join("")}</tbody></table>`);
+      if (d.named && !d.cover) cdCover(d.tracks, t0.album).then((u) => {
+        if (u) d.cover = u;
+        const box = document.getElementById("cd-art");
+        const id = /[?&]CDDBDiscid=([0-9a-f]+)/i.exec(d.tracks[0].url);   // 按光盘编号再记一份，播放条和「正在播放」取用（app.js 的 cdArt）
+        if (u && id) { try { localStorage.setItem("daphile.cdcover.id." + id[1], u); } catch (_) { /* 记不住就只显示「CD」字样 */ } }
+        if (u && box && cdMine(seq) && cdNow === d) { const img = new Image(); img.onload = () => { if (box.isConnected) { box.innerHTML = ""; box.appendChild(img); box.classList.add("has"); } }; img.alt = ""; img.src = u; }
+      });
+      markRows(S.cur);
+    }
+    const ttl = (i) => { const t = d.tracks[i]; return d.named ? t.title : `CD 第 ${t.num} 轨`; };
+    content().onclick = (e) => {
+      if (!d.ok) return;
+      const all = e.target.closest("[data-cdall]");
+      if (all) return addOnce(all, async () => {
+        for (let i = 0; i < d.tracks.length; i++) await LMS.cdAdd(d.tracks[i].url, ttl(i));
+        toast(`已把整张 CD（${d.tracks.length} 首）加到当前播放末尾`);
+      });
+      const row = e.target.closest("tr[data-cd]");
+      if (row) addRow(row, () => LMS.cdAdd(d.tracks[row.dataset.cd].url, ttl(row.dataset.cd)), row.dataset.title);
+    };
+    if (cdWaits(d)) cdWatch(seq);
+  }
+  /* 弹出：仓门关着就打开，开着就关上。按下后马上清掉页面上这张 CD 的信息。
+     出仓：只转光盘图标、不出字，查到仓门确实开了才显示「请放入音乐CD」。
+     入仓：马上显示转动的光盘 +「正在读盘...」，一直到读出光盘（或确定读不出）为止。
+     正在放 CD 时先问一句并停止播放（光驱还在读盘时不能开仓）；放的是曲库里的歌则不受影响 */
+  let cdBusy = false;
+  async function cdEject() {
+    if (cdBusy) return;
+    const seq = cdSeq, before = cdNow;
+    const cur = S.cur, wasCd = !!(cur && /^cdplay:/.test(cur.url || "")) && !!S.st && S.st.mode !== "stop";
+    if (wasCd && !await ask({ title: "先停止播放 CD？", msg: "光驱正在放这张 CD，要先停下来才能打开仓门。", ok: "停止并弹出" })) return;
+    if (!cdMine(seq)) return;
+    cdBusy = true; cdTools(true, true);
+    clearTimeout(cdTimer); cdTok++;
+    try { await cdTray2(seq, before, wasCd); } finally { cdBusy = false; }
+  }
+  async function cdTray2(seq, before, wasCd) {
+    const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+    const closing = !!before && !before.ok && before.err[0] === "empty" && before.err[3] === 2;   // 按之前仓门开着 → 这一下是关仓
+    // 指令发出去之前就先把页面换掉，按下去马上有反应
+    cdHold = cdShut = 0;
+    cdPaint(closing ? READING : { ok: false, err: ["moving", "", ""] });
+    let sent = false;
+    try {
+      if (wasCd) { await LMS.cdStop(); await wait(1200); }
+      await LMS.cdTray(); sent = true;
+    } catch (_) { /* 发不出去：下面改用插件的办法 */ }
+    if (!cdMine(seq)) return;
+    if (closing) {
+      if (!sent) { toast("弹出指令发不出去，请按光驱上的按钮"); return cdShow(before, seq); }
+      cdShut = Date.now() + 6000; cdHold = Date.now() + CD_HOLD;
+      cdTools(true, false);
+      return cdWatch(seq);
+    }
+    // 出仓：等仓门走出来，查到「仓门开着」为止；中途光驱报的各种错都不算数，接着转
+    let d = sent ? null : before;
+    const hadDisc = !!before && before.ok;
+    for (let i = 0; sent && i < 7; i++) {
+      await wait(i ? 1000 : 2500);
+      // 按之前没读出光盘，这一问又迟迟不回：光驱其实是收进去在读盘了，先把「正在读盘」亮出来
+      const slow = hadDisc ? 0 : setTimeout(() => { if (cdMine(seq) && cdNow && cdNow.err && cdNow.err[0] === "moving") { cdHold = Date.now() + CD_HOLD; cdPaint(GETTING); } }, 700);
+      d = await cdLoad();
+      clearTimeout(slow);
+      if (!cdMine(seq)) return;
+      if (d.err && (d.err[0] === "empty" || d.err[0] === "nodrive")) break;
+      // 按之前就没读出光盘，按完却不是「没盘 / 仓门开着」：这一下其实是把仓门关上了（有的光驱分不清开和关），照入仓处理
+      if (!hadDisc) { cdHold = Date.now() + CD_HOLD; cdTools(true, false); if (d.ok) return cdShow(d, seq); if (cdNow !== GETTING || d.err[0] === "reading") cdPaint(READING); return cdWatch(seq); }
+      if (d.ok && i >= 1) break;
+    }
+    // 原来读得出光盘、按完还是同一张盘在里面：这条路没起作用（不是 Daphile 系统，或它的网页不让用）。
+    // 改用 CDplayer 插件自带的退盘，它只会开、不会关
+    if (before && before.ok && d && d.ok && cdSame(before, d)) {
+      try { await LMS.cdEject(false); await wait(2500); d = await cdLoad(); }
+      catch (e) { d = { ok: false, err: ["fail", "仓门没有动", "弹出指令没有起作用：" + e.message] }; }
+      if (!cdMine(seq)) return;
+      if (d.ok && cdSame(before, d)) toast("仓门没有动，请按光驱上的按钮");
+    }
+    if (!sent && !hadDisc) toast("弹出指令发不出去，请按光驱上的按钮");
+    // 仓门走了这么久还没查到「仓门开着」：光驱还在忙，报的错先不算数，接着转、接着查
+    if (sent && d && !d.ok && d.err[0] !== "empty") { cdHold = Date.now() + CD_HOLD; d = cdSettle(d); }
+    cdShow(d || { ok: false, err: ["fail", "仓门没有动", "弹出指令发不出去，请按光驱上的按钮。"] }, seq);
+  }
+
   const ROUTES = {
+    cd: () => cd(),
     albums: (term) => albumGrid("", ["sort:album", ...(term ? ["search:" + term] : [])]),
     recent: () => albumGrid("", ["sort:new"]),
     album: (id) => albumDetail(id),
@@ -550,7 +917,7 @@ const Views = (() => {
     favorites: (f) => favorites(f),
     search: (term) => search(term),
   };
-  const TOP = new Set(["albums", "recent", "artists", "songs", "folders", "playlists", "favorites", "search"]);
+  const TOP = new Set(["albums", "recent", "artists", "songs", "folders", "playlists", "favorites", "search", "cd"]);
 
   let rootView = "albums";   // 从侧边栏打开的分类
   async function go(view, arg) {
@@ -559,6 +926,11 @@ const Views = (() => {
     // 播放列表详情专用的标题行布局（数量居中、右侧按钮），换页面时清掉
     document.querySelector(".detail-head").classList.remove("centered");
     const va = document.getElementById("view-act"); va.innerHTML = ""; va.onclick = null;
+    document.getElementById("cd-tools").hidden = view !== "cd";                    // 右上角的「重新读取」「弹出」只在 CD 页出现
+    document.getElementById("picker").classList.toggle("is-cd", view === "cd");
+    const ft = document.getElementById("fav-tools");                                // 右上角的「删除」键只在「我的喜爱」出现
+    ft.hidden = view !== "favorites"; ft.innerHTML = ""; ft.onclick = null;
+    if (view !== "cd") clearTimeout(cdTimer);
     if (TOP.has(view)) setCols(view);   // 换分类时重设一栏/两栏；进入详情时左栏保持不动
     // 两栏里从详情再点进下一层（艺人 → 专辑，有返回栈）：左栏再缩到 1/5，专辑页占 4/5；返回到详情恢复 2/5
     else cols().classList.toggle("deep", stack.length > 0 && cols().classList.contains("detail"));
@@ -639,6 +1011,15 @@ const Views = (() => {
     document.querySelectorAll(".tracks tr[data-id]").forEach((tr) => tr.classList.toggle("playing", tr.dataset.id === id));
     document.querySelectorAll("#picker tr[data-id], #picker li[data-id]").forEach((el) =>
       el.classList.toggle("queued", el.dataset.id !== id && inQ.has(el.dataset.id)));
+    // CD 页的曲目没有曲库 id，按「轨号@起点」对：同一张盘的同一轨才算
+    const rows = document.querySelectorAll("#picker tr[data-cdkey]");
+    if (!rows.length) return;
+    const ck = cdKey(cur && cur.url);
+    const cdQ = new Set(((S.st && S.st.playlist_loop) || []).map((x) => cdKey(x.url)).filter(Boolean));
+    rows.forEach((tr) => {
+      tr.classList.toggle("playing", !!ck && tr.dataset.cdkey === ck);
+      tr.classList.toggle("queued", tr.dataset.cdkey !== ck && cdQ.has(tr.dataset.cdkey));
+    });
   }
 
   /* ---------- 分隔条：拖动调节选曲窗口宽度（「当前播放」跟着让位），记在 localStorage，双击恢复默认 ---------- */
@@ -761,8 +1142,8 @@ const Views = (() => {
   }
 
   /* ---------- 向左滑动关闭选曲窗口：窗口跟着手指左移，拉过窗口宽度 1/4（或快速一甩）松手即关闭，不够就弹回 ----------
-     喜爱页的行（左滑是移出喜爱）、分隔条、输入框上不接管；竖向移动留给列表滚动 */
-  /* 选曲窗口跟手左移（x ≤ 0）。窗口自己的左滑、喜爱行露出按钮后继续左滑，都用这一对函数 */
+     分隔条、输入框上不接管；竖向移动留给列表滚动 */
+  /* 选曲窗口跟手左移（x ≤ 0） */
   let pd = null;
   function pickDrag(x, t) {
     const p = document.getElementById("picker");
@@ -791,7 +1172,7 @@ const Views = (() => {
     p.addEventListener("pointerdown", (e) => {
       g = null;
       if (e.button > 0 || !pickerOpen()) return;
-      if (e.target.closest("[data-swipe], #picker-resize, #pick-split, input, textarea, select")) return;
+      if (e.target.closest("#picker-resize, #pick-split, input, textarea, select")) return;
       g = { x: e.clientX, y: e.clientY, id: e.pointerId, on: false };
     });
     p.addEventListener("pointermove", (e) => {
@@ -822,14 +1203,6 @@ const Views = (() => {
     bindResize();
     bindSplit();
     bindSwipeClose();
-    // 喜爱页：向左滑动一行先露出红色「移出」按钮，松手就停住，再点按钮才移出喜爱；
-    // 手指不松开继续左滑，就变成拖动选曲窗口（够远松手关闭），不会误删。
-    // 删后 LMS 会重新编号，所以整页重读
-    bindSwipe(content(), "li[data-swipe]", (li) => act(async () => {
-      await LMS.favDelete(li.dataset.swipe);
-      toast(`已从喜爱移除：${li.dataset.title || ""}`);
-      if (current && current.view === "favorites") await go("favorites", current.arg);
-    }, "移除失败"), { reveal: true, over: { drag: pickDrag, release: pickRelease } });
     document.getElementById("sidebar").addEventListener("click", (e) => {
       const b = e.target.closest(".nav-item[data-view]");
       if (!b || !TOP.has(b.dataset.view)) return;
