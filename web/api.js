@@ -84,17 +84,23 @@ const LMS = (() => {
     },
     /* 把队列里第 from 首移到第 to 位（从 0 开始），LMS 会自动修正正在播放的位置 */
     move: (from, to) => p(["playlist", "move", String(from), String(to)]),
-    /* AirPlay 转移：把 from 的整个队列、当前曲目和进度搬到 to 上接着放，from 暂停。
-       to 原来的队列会被替换。返回转过去的曲目数。 */
-    transfer: async (from, to) => {
+    /* AirPlay 转移：把 from 的整个队列、当前曲目和进度搬到 to 上，to 原来的队列会被替换。
+       原来在放：to 接着放，from 暂停。
+       原来暂停：to 只停在那一首、不出声（LMS 的停止状态），返回 resume = {idx, id, t}，
+       由网页记住进度，按播放时再从 t 秒接着放（见 app.js Resume）。
+       注意不能「先放再暂停」：playlist index 后 LMS 处在缓冲状态，这时的 pause 会被忽略（StreamingController
+       状态表 Pause/BUFFERING = _NoOp），缓冲完就响了——这就是以前暂停时转过去会自动播放的原因。 */
+    transfer: async (from, to, tKnown = null) => {   // tKnown：from 自己也是停着的、进度由网页记着时传入
       const st = await rpc(from, ["status", 0, 1000, "tags:u"]);
+      if (tKnown != null) { st.time = tKnown; st.can_seek = 1; }
       const readAt = Date.now();
       const loop = st.playlist_loop || [];
       if (!loop.length) throw new Error("当前播放列表是空的");
       const idx = Number(st.playlist_cur_index) || 0;
       const playing = st.mode === "play";
       const run = (cmd) => rpc(to, cmd);
-      await run(["power", "1"]);
+      // 第二个参数 1 = noplay：开机时不按「开机恢复播放」设置自动续播 to 原来的队列
+      await run(["power", "1", "1"]);
       await run(["playlist", "clear"]);
       // 按原顺序加入：本地曲目成批按 track_id 加，网络电台等（id 为负）按地址加
       let ids = [];
@@ -105,12 +111,23 @@ const LMS = (() => {
       }
       await flush();
       await run(["playlist", "repeat", String(st["playlist repeat"] || 0)]);
-      if (playing) await rpc(from, ["pause", "1"]);          // 先停原设备，避免两边同时出声
-      await run(["playlist", "index", String(idx)]);
       const t = Number(st.time || 0) + (playing ? (Date.now() - readAt) / 1000 : 0);
-      if (t > 1 && Number(st.can_seek)) await run(["time", String(t)]);
-      if (!playing) await run(["pause", "1"]);               // 原来是暂停的，转过去也停在同一位置
-      return loop.length;
+      const seek = t > 1 && Number(st.can_seek);
+      if (playing) {
+        await rpc(from, ["pause", "1"]);                     // 先停原设备，避免两边同时出声
+        await run(["playlist", "index", String(idx)]);
+        if (seek) await run(["time", String(t)]);
+        return { n: loop.length, resume: null };
+      }
+      // 原来暂停（或停止）：playlist index <idx> <fadein> <noplay=1>，播放器停着时只移到这一首、不开始放
+      await run(["playlist", "index", String(idx), "", "1"]);
+      const cur = loop.find((x) => Number(x["playlist index"]) === idx);
+      return { n: loop.length, resume: seek && cur ? { idx, id: String(cur.id), t: Math.round(t * 10) / 10 } : null };
+    },
+    /* 从第 idx 首的 t 秒开始放（暂停时转过来、停在那一首的设备按播放时用） */
+    resumeAt: async (idx, t) => {
+      await p(["playlist", "index", String(idx)]);
+      if (t > 1) await p(["time", String(t)]);
     },
     /* 把当前播放队列存成播放列表（LMS 写到 playlistdir 下的 <名称>.m3u；同名会覆盖） */
     savePlaylist: (name) => p(["playlist", "save", name]),
@@ -146,6 +163,10 @@ const LMS = (() => {
       return Object.assign({}, ...(r.songinfo_loop || []));
     },
     playlists: () => q(["playlists", 0, 200]),
+    /* 删除已保存的播放列表（LMS 播放列表目录里的 .m3u 文件一起删掉；曲目文件不动） */
+    deletePlaylist: (plId) => q(["playlists", "delete", "playlist_id:" + plId]),
+    /* 从已保存的播放列表里删一首（index 从 0 起；删后后面的位置往前挪） */
+    playlistDeleteTrack: (plId, index) => q(["playlists", "edit", "cmd:delete", "playlist_id:" + plId, "index:" + index]),
     // 带上当前设备查询：列表里有网络流（电台 http/m3u8）时，LMS 不带设备会直接断开连接（浏览器报 502 / 网络错误）
     playlistTracks: (plId) => rpc(playerId || 0, ["playlists", "tracks", 0, 500, "playlist_id:" + plId, "tags:acdtjJKl"]),
     favorites: (itemId) => q(["favorites", "items", 0, 200, "want_url:1", ...(itemId ? ["item_id:" + itemId] : [])]),

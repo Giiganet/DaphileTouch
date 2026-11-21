@@ -14,7 +14,7 @@ const Views = (() => {
     const back = document.getElementById("btn-back");
     const title = document.getElementById("view-title").textContent.trim();
     const head = document.querySelector(".detail-head");
-    head.hidden = back.hidden && !title && !head.classList.contains("centered");
+    head.hidden = back.hidden && !title;
   }
   /* 数量：和名称分开，灰色靠右。分类总数放窗口顶部（setCount），详情里的数量放详情标题行（setTitle 第二个参数） */
   const UNIT = { albums: "张", recent: "张", artists: "位", songs: "首",
@@ -30,9 +30,9 @@ const Views = (() => {
   };
   const empty = (msg) => `<div class="empty">${esc(msg)}</div>`;
 
-  /* ---------- 分栏：艺人/播放列表用两栏（左列条目、右列详情），其余只用一栏 ---------- */
+  /* ---------- 分栏：艺人用两栏（左列条目、右列详情），其余只用一栏 ---------- */
   const pickList = () => document.getElementById("pick-list");
-  const TWO = new Set(["artists", "playlists"]);
+  const TWO = new Set(["artists"]);
   const CAT = { albums: "专辑", recent: "最近添加", artists: "艺人", songs: "歌曲",
     folders: "文件夹", playlists: "播放列表", favorites: "我的喜爱", search: "搜索", cd: "CD播放器" };
   let listPager = null;      // 左栏的分页加载器
@@ -128,7 +128,7 @@ const Views = (() => {
           <div class="artist">${esc(a.artist || "未知艺人")}</div>
           <div class="meta">${[a.year && a.year !== 0 ? a.year : "", tracks.length + " 首", fmtTime(totalSec)].filter(Boolean).join(" · ")}</div>
           ${fmtChips(tracks[0])}
-          ${tracks.length ? selectAllBtn(`<button class="pill" data-addall>＋ 整张加入</button>`) : ""}
+          ${tracks.length ? selectAllBtn(`<button class="pill" data-addall>＋ 全部播放</button>`) : ""}
         </div>
       </div>
       ${trackTable(tracks, { num: true })}`;
@@ -140,7 +140,7 @@ const Views = (() => {
     markRows(S.cur);
   }
 
-  /* 详情页顶部的整体操作按钮（如「＋ 整张加入」） */
+  /* 详情页顶部的整体操作按钮（如「＋ 全部播放」） */
   const selectAllBtn = (extra = "") => extra ? `<div class="actions">${extra}</div>` : "";
 
   /* 行尾的「＋」：点一下把这一首（或这一项）加到当前播放末尾 */
@@ -353,7 +353,7 @@ const Views = (() => {
     return { stop: () => { stopped = true; io.disconnect(); } };
   }
 
-  /* ---------- 专辑目录（目录里直接有曲目）：顶部封面 + 专辑信息 + 「＋ 整张加入」，下面是曲目表 ---------- */
+  /* ---------- 专辑目录（目录里直接有曲目）：顶部封面 + 专辑信息 + 「＋ 全部播放」，下面是曲目表 ---------- */
   const FMT = { flc: "FLAC", wav: "WAV", aif: "AIFF", alc: "ALAC", mp3: "MP3", aac: "AAC", mp4: "AAC", ogg: "Ogg",
     ops: "Opus", dsf: "DSD", dff: "DSD", wvp: "WavPack", ape: "APE", wma: "WMA" };
   const secOf = (d) => typeof d === "number" ? d : String(d || "").split(":").reduce((s, x) => s * 60 + Number(x || 0), 0);
@@ -396,7 +396,7 @@ const Views = (() => {
           <div class="artist">${esc(artistName || "未知艺人")}</div>
           <div class="meta">${esc(meta)}</div>
           ${fmtChips(info)}
-          ${selectAllBtn(`<button class="pill" data-addall>＋ 整张加入</button>`)}
+          ${selectAllBtn(`<button class="pill" data-addall>＋ 全部播放</button>`)}
         </div>
       </div>
       ${trackTable(tracks, { num: true })}
@@ -456,45 +456,169 @@ const Views = (() => {
     if (box) pager = probeFolders(box);   // 换页面时 reset() 会停掉它
   }
 
-  async function playlists() {
-    reset(empty("选择播放列表"));
-    setTitle("");
-    const r = await LMS.playlists();
-    const pls = r.playlists_loop || [];
-    setCount(pls.length);
-    pickList().innerHTML = pls.length ? `<ul class="list" id="pl">${pls.map((p) => leftItem(p.id, p.playlist, lead("playlist"))).join("")}</ul>` : empty("没有播放列表");
-    const pl = document.getElementById("pl");
-    if (pl) pl.onclick = (e) => {
-      const li = e.target.closest("li[data-k]");
-      if (li) pickLeft(li, "playlist", { id: li.dataset.k, name: li.dataset.name });
+  /* ---------- 窗口标题栏的「删除」（喜爱、播放列表一览、播放列表里的曲目共用） ----------
+     平时只有一个浅红色「删除」键；点它进入选择状态：点行打勾，标题栏变成「全选」「取消」「删除（N）」，
+     点「删除（N）」弹窗确认后才删。没有「一键全部删除」，要全删就先点「全选」。
+     opt.items 条目数组；opt.el 列表元素（加 selecting 类）；opt.rowSel 可勾选的行（带 data-i）；
+     opt.ask(picks, all) 返回 ask() 的参数；opt.remove(picks) 执行删除并返回条数；opt.done(n) 提示文字；opt.reload() 删后重读 */
+  const TRASH = `<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h16M9.5 7V4.5h5V7M6 7l1 13h10l1-13M10 11v5.5M14 11v5.5"/></svg>`;
+  function selDelete(opt) {
+    const me = current, mine = () => current === me;
+    const box = document.getElementById("fav-tools"), el = opt.el, act0 = document.getElementById("view-act");
+    let selecting = false, busy = false;
+    const rows = () => (el ? [...el.querySelectorAll(opt.rowSel)] : []);
+    const picked = () => rows().filter((r) => r.classList.contains("sel")).map((r) => opt.items[r.dataset.i]);
+    const draw = () => {
+      const n = picked().length;
+      const all = !!opt.items.length && n === opt.items.length;
+      box.innerHTML = selecting
+        ? `<button class="pill fav-b" data-favpickall ${busy ? "disabled" : ""}>${all ? "全不选" : "全选"}</button>
+           <button class="pill fav-b" data-favcancel ${busy ? "disabled" : ""}>取消</button>
+           <button class="pill fav-main fav-del" data-favdo ${busy || !n ? "disabled" : ""}>${TRASH}删除${n ? `（${n}）` : ""}</button>`
+        : `<button class="pill fav-main" data-favsome ${busy || !opt.items.length ? "disabled" : ""}>${TRASH}删除</button>`;
     };
-  }
-
-  /* 播放列表详情：第一行不显示名称（左栏已高亮），中间是曲目数，最右是「＋ 整个加入」 */
-  async function playlistDetail({ id, name }) {
-    reset(empty("加载中…"));
-    const r = await LMS.playlistTracks(id);
-    const tracks = r.playlisttracks_loop || [];
-    reset(trackTable(tracks, { artist: true }));
-    setTitle("");
-    const head = document.querySelector(".detail-head"), act0 = document.getElementById("view-act");
-    head.classList.add("centered");
-    document.getElementById("view-count").textContent = fmtCount(tracks.length, "首");
-    act0.innerHTML = tracks.length ? `<button class="pill" data-addall>＋ 整个加入</button>` : "";
-    act0.onclick = (e) => {
-      if (e.target.closest("[data-addall]")) {
-        addOnce(e.target.closest("[data-addall]"), async () => { await LMS.loadPlaylist(id, "add"); toast(`已把「${name}」（${tracks.length} 首）加到当前播放末尾`); });
+    const select = (on) => {
+      selecting = on;
+      if (el) { el.classList.toggle("selecting", on); if (!on) rows().forEach((r) => r.classList.remove("sel")); }
+      act0.hidden = on;   // 选择时先收起标题行里的「加入」「播放」，免得误点
+      draw();
+    };
+    box.onclick = async (e) => {
+      const b = e.target.closest("button");
+      if (!b || b.disabled || !mine()) return;
+      if (b.hasAttribute("data-favsome")) return select(true);
+      if (b.hasAttribute("data-favcancel")) return select(false);
+      if (b.hasAttribute("data-favpickall")) {   // 全选；已经全选时再点就是全不选
+        const rs = rows(), on = rs.some((r) => !r.classList.contains("sel"));
+        rs.forEach((r) => r.classList.toggle("sel", on));
+        return draw();
+      }
+      if (b.hasAttribute("data-favdo")) {
+        const picks = picked();
+        if (!picks.length) return;
+        if (!await ask(opt.ask(picks, picks.length === opt.items.length)) || !mine()) return;
+        busy = true; draw();
+        try { const n = await opt.remove(picks); toast(opt.done(n)); } catch (err) { toast("删除失败：" + err.message); }
+        busy = false;
+        if (mine()) await opt.reload();   // 删后整页重读
       }
     };
-    syncHead();
-    bindTracks(() => {});
+    // 选择状态下点一行只打勾，不加入当前播放、不进入下一层
+    const base = content().onclick;
+    content().onclick = (e) => {
+      if (!selecting) return base && base(e);
+      const r = e.target.closest(opt.rowSel);
+      if (!r || busy) return;
+      r.classList.toggle("sel");
+      draw();
+    };
+    draw();
+  }
+  const whatOf = (picks, all, unit) => picks.length === 1 ? `「${picks[0].name}」` : all ? `全部 ${picks.length} ${unit}` : `选中的 ${picks.length} ${unit}`;
+
+  /* ---------- 播放列表：单列，每行「加入」「播放」；删除在窗口标题栏 ----------
+     「播放」：清空当前播放、换成这个列表并从第一首开始放（先弹窗提示会清掉当前播放里的曲目）；
+     确定播放后关闭选曲窗口，回到「当前播放」。「加入」：加到当前播放末尾，不自动播放，窗口不关。点行的其他地方进入列表看曲目，标题行同样有这两个键。 */
+  // 和其他页面一致的圆钮：「播放」深灰圆 + 白三角，「加入」灰圆 + 「＋」（同专辑、目录行的加入键）
+  const PLAY = `<svg viewBox="0 0 16 16" width="11" height="11" aria-hidden="true"><path d="M5.5 3.3v9.4L13 8z" fill="currentColor" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/></svg>`;
+  const plBtns = (id, name) => `<span class="pl-acts" data-plid="${esc(id)}" data-plname="${esc(name)}">
+      <button class="add-btn pl-play" data-plplay aria-label="播放这个播放列表" title="播放">${PLAY}</button>
+      <button class="add-btn" data-pladd aria-label="加入当前播放" title="加入当前播放">${PLUS}</button></span>`;
+  async function plAct(e) {
+    const b = e.target.closest("[data-pladd], [data-plplay]");
+    if (!b || b.disabled || b.dataset.busy) return !!b;
+    const box = b.closest("[data-plid]"), id = box.dataset.plid, name = box.dataset.plname;
+    // 进行中：这一组键都不能再点（「加入」键自己由 addOnce 变灰，成功后短暂变成蓝色「✓」）
+    const busy = (on, self = true) => box.querySelectorAll("button").forEach((x) => { if (x !== b || self) x.disabled = on; });
+    if (b.hasAttribute("data-pladd")) {
+      busy(true, false);
+      await addOnce(b, async () => { await LMS.loadPlaylist(id, "add"); toast(`已把「${name}」加到当前播放末尾`); flashDone(b); });
+      busy(false);
+    } else {
+      const n = (S.st && Number(S.st.playlist_tracks)) || 0;
+      if (!await ask({ title: `播放「${name}」？`,
+        msg: n ? `当前播放列表里的 ${n} 首曲目会被清除，换成这个播放列表，并从第一首开始播放。` : "将把这个播放列表放进当前播放，并从第一首开始播放。",
+        ok: "播放", danger: !!n })) return true;
+      // 确定后关掉选曲窗口，回到「当前播放」看新换上的列表（滚回顶部，从第一首看起）
+      showPicker(false);
+      const cl = document.getElementById("cur-list"); if (cl) cl.scrollTop = 0;
+      busy(true);
+      await act(async () => {
+        if (S.st && Number(S.st.power) !== 1) await LMS.power(1);
+        await LMS.loadPlaylist(id, "load");
+        toast(`正在播放「${name}」`);
+      }, "播放失败");
+      busy(false);
+    }
+    return true;
   }
 
-  /* 我的喜爱。删除不再用左滑（和「向左滑关闭窗口」抢手势），改成窗口标题栏的按键：
-     平时只有一个「删除」键（带垃圾桶图标）；点它进入选择状态：点行打勾，标题栏变成「全选」「取消」「删除（N）」，
-     点「删除（N）」弹窗确认后才删。没有「一键全部删除」，要全删就先点「全选」。
+  async function playlists() {
+    reset(empty("加载中…"));
+    setTitle("");
+    const me = current;
+    const r = await LMS.playlists();
+    if (current !== me) return;
+    const pls = r.playlists_loop || [];
+    const items = pls.map((p) => ({ id: String(p.id), name: p.playlist }));
+    setCount(pls.length);
+    reset(pls.length ? `<ul class="list pl-list" id="pl">${items.map((p, i) => `
+      <li data-i="${i}" data-k="${esc(p.id)}" data-name="${esc(p.name)}">${lead("playlist")}<div class="grow">${esc(p.name)}</div>${plBtns(p.id, p.name)}</li>`).join("")}</ul>` : empty("没有播放列表"));
+    content().onclick = async (e) => {
+      if (await plAct(e)) return;
+      const li = e.target.closest("li[data-k]");
+      if (li) open("playlist", { id: li.dataset.k, name: li.dataset.name });
+    };
+    selDelete({
+      items, el: document.getElementById("pl"), rowSel: "li[data-i]",
+      ask: (picks, all) => ({ title: "删除播放列表？", msg: `将从 LMS 删除${whatOf(picks, all, "个播放列表")}，删除后无法恢复。只删列表，不删音乐文件；当前播放不受影响。`, ok: "删除", danger: true, icon: "trash" }),
+      remove: async (picks) => {   // 删之前再读一次，名称和编号对不上就不删
+        const now = new Map(((await LMS.playlists()).playlists_loop || []).map((p) => [String(p.id), p.playlist]));
+        if (picks.some((p) => now.get(p.id) !== p.name)) throw new Error("播放列表刚刚有变化，请重新选择");
+        for (const p of picks) await LMS.deletePlaylist(p.id);
+        return picks.length;
+      },
+      done: (n) => `已删除 ${n} 个播放列表`,
+      reload: () => go("playlists"),
+    });
+  }
+
+  /* 播放列表里的曲目：「‹ 名称 N 首」，右侧「加入」「播放」；点曲目行把这一首加到当前播放末尾。
+     窗口标题栏的「删除」用来从这个播放列表里删曲目（LMS 的 playlists edit cmd:delete，按位置删）：
+     每删一首后面的位置都会往前挪，所以从后往前删；删之前再读一次曲目，位置和曲目对不上就不删 */
+  async function playlistDetail(arg) {
+    const { id, name } = arg;
+    reset(empty("加载中…"));
+    const me = current;
+    const r = await LMS.playlistTracks(id);
+    if (current !== me) return;
+    const tracks = r.playlisttracks_loop || [];
+    reset(tracks.length ? trackTable(tracks, { artist: true }) : empty("这个播放列表是空的"));
+    setTitle(name, tracks.length, "首");
+    const act0 = document.getElementById("view-act");
+    act0.innerHTML = plBtns(id, name);
+    act0.onclick = (e) => plAct(e);
+    syncHead();
+    bindTracks(() => {});
+    const items = tracks.map((t, i) => ({ i, id: String(t.id), name: t.title || "" }));
+    selDelete({
+      items, el: content().querySelector(".tracks"), rowSel: "tbody tr[data-i]",
+      ask: (picks, all) => ({ title: "从播放列表删除？",
+        msg: `将把${whatOf(picks, all, "首")}从「${name}」里删除${all ? "，这个播放列表会变成空的（列表本身保留）" : ""}。只是移出这个播放列表，不会删除音乐文件；当前播放不受影响。`,
+        ok: "删除", danger: true, icon: "trash" }),
+      remove: async (picks) => {
+        const now = (await LMS.playlistTracks(id)).playlisttracks_loop || [];
+        if (now.length !== tracks.length || picks.some((p) => !now[p.i] || String(now[p.i].id) !== p.id)) throw new Error("播放列表刚刚有变化，请重新选择");
+        for (const p of [...picks].sort((a, b) => b.i - a.i)) await LMS.playlistDeleteTrack(id, p.i);
+        return picks.length;
+      },
+      done: (n) => `已从「${name}」删除 ${n} 首`,
+      reload: () => go("playlist", arg),
+    });
+  }
+
+  /* 我的喜爱。删除不用左滑（和「向左滑关闭窗口」抢手势），用窗口标题栏的「删除」（见 selDelete）。
      LMS 每删一项，后面的条目号都会往前挪，所以从号大的往号小的删；删之前再读一次列表核对，对不上就不删 */
-  const TRASH = `<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h16M9.5 7V4.5h5V7M6 7l1 13h10l1-13M10 11v5.5M14 11v5.5"/></svg>`;
   const favKey = (f) => String(f.id).replace(/^[0-9a-f]{8}\./i, "");   // "e94ffc7d.8" → "8"；子目录里是 "3.2"
   const favLast = (k) => Number(String(k).split(".").pop());
   async function favRemove(arg, picks) {
@@ -521,58 +645,13 @@ const Views = (() => {
     list(arg ? arg.name : "", items, (f) => {
       if (f.more) open("favorites", { id: f.id, name: f.name });
     });
-    const me = current, mine = () => current === me;
-    const box = document.getElementById("fav-tools"), ul = document.getElementById("ls");
-    let selecting = false, busy = false;
-    const picked = () => (ul ? [...ul.querySelectorAll("li.sel")].map((li) => items[li.dataset.i]) : []);
-    const draw = () => {
-      const n = picked().length;
-      const all = !!items.length && n === items.length;
-      box.innerHTML = selecting
-        ? `<button class="pill fav-b" data-favpickall ${busy ? "disabled" : ""}>${all ? "全不选" : "全选"}</button>
-           <button class="pill fav-b" data-favcancel ${busy ? "disabled" : ""}>取消</button>
-           <button class="pill fav-main fav-del" data-favdo ${busy || !n ? "disabled" : ""}>${TRASH}删除${n ? `（${n}）` : ""}</button>`
-        : `<button class="pill fav-main" data-favsome ${busy || !items.length ? "disabled" : ""}>${TRASH}删除</button>`;
-    };
-    const select = (on) => {
-      selecting = on;
-      if (ul) { ul.classList.toggle("selecting", on); if (!on) ul.querySelectorAll("li.sel").forEach((li) => li.classList.remove("sel")); }
-      draw();
-    };
-    const run = async (job) => {
-      busy = true; draw();
-      try { const n = await job(); toast(`已从喜爱删除 ${n} 项`); } catch (e) { toast("删除失败：" + e.message); }
-      busy = false;
-      if (mine()) await go("favorites", arg);   // 删后 LMS 重新编号，整页重读
-    };
-    box.onclick = async (e) => {
-      const b = e.target.closest("button");
-      if (!b || b.disabled || !mine()) return;
-      if (b.hasAttribute("data-favsome")) return select(true);
-      if (b.hasAttribute("data-favcancel")) return select(false);
-      if (b.hasAttribute("data-favpickall")) {   // 全选；已经全选时再点就是全不选
-        const lis = [...ul.querySelectorAll("li[data-i]")], on = lis.some((li) => !li.classList.contains("sel"));
-        lis.forEach((li) => li.classList.toggle("sel", on));
-        return draw();
-      }
-      if (b.hasAttribute("data-favdo")) {
-        const picks = picked();
-        if (!picks.length) return;
-        const what = picks.length === 1 ? `「${picks[0].name}」` : picks.length === items.length ? `这里的全部 ${picks.length} 项` : `选中的 ${picks.length} 项`;
-        if (!await ask({ title: "从喜爱删除？", msg: `将把${what}从「我的喜爱」里删除。只是移出喜爱，不会删除音乐文件。`, ok: "删除", danger: true, icon: "trash" }) || !mine()) return;
-        return run(() => favRemove(arg, picks));
-      }
-    };
-    // 选择状态下点一行只打勾，不加入当前播放、不进入收藏夹
-    const base = content().onclick;
-    content().onclick = (e) => {
-      if (!selecting) return base && base(e);
-      const li = e.target.closest("li[data-i]");
-      if (!li || busy) return;
-      li.classList.toggle("sel");
-      draw();
-    };
-    draw();
+    selDelete({
+      items, el: document.getElementById("ls"), rowSel: "li[data-i]",
+      ask: (picks, all) => ({ title: "从喜爱删除？", msg: `将把${picks.length === 1 ? `「${picks[0].name}」` : all ? `这里的全部 ${picks.length} 项` : `选中的 ${picks.length} 项`}从「我的喜爱」里删除。只是移出喜爱，不会删除音乐文件。`, ok: "删除", danger: true, icon: "trash" }),
+      remove: (picks) => favRemove(arg, picks),
+      done: (n) => `已从喜爱删除 ${n} 项`,
+      reload: () => go("favorites", arg),   // 删后 LMS 重新编号，整页重读
+    });
   }
 
   /* ---------- 搜索（侧边栏「搜索」或顶部搜索框） ---------- */
@@ -710,6 +789,23 @@ const Views = (() => {
      只在三种时候丢掉重读：按「弹出」、按「重新读取」、整个网页重新打开 */
   let cdKeep = null;
   const cdMine = (seq) => seq === cdSeq && current && current.view === "cd";
+  /* 光驱在不在：读到「打不开光驱」就是没接，其余情况都算接着。记在本机，并通知外面
+     （侧栏「CD播放器」的图标：没接 CD 机时变灰）。true / false / null（还不知道） */
+  let cdDrive = null;
+  const cdDriveHooks = [];
+  const cdSetDrive = (has) => {
+    if (has === cdDrive) return;
+    cdDrive = has;
+    try { localStorage.setItem("daphile.cddrive", has ? "1" : "0"); } catch (_) { /* 记不住也不影响 */ }
+    cdDriveHooks.forEach((f) => { try { f(has); } catch (_) { /* 忽略 */ } });
+  };
+  /* 打开网页时查一次光驱在不在（只发一次查询）。上次记着「接着光驱」时外面不会调用它：
+     光驱里有盘的话这一问会让光驱读盘，等用户点开 CD 页时自然会知道 */
+  async function cdProbe() {
+    let r;
+    try { r = await LMS.cdItems(); } catch (_) { return; }
+    cdSetDrive(!(r.networkerror && cdError(r.networkerror)[0] === "nodrive"));
+  }
   const cdLoad = async () => {
     try { return await cdRead(); } catch (e) { return { ok: false, err: ["fail", "读取 CD 失败", "与 Daphile 的连接出了问题：" + e.message] }; }
   };
@@ -743,6 +839,7 @@ const Views = (() => {
   function cdPaint(d) {
     cdNow = d; cdKeep = null;
     const k = d.err[0];
+    if (k !== "fail") cdSetDrive(k !== "nodrive");   // fail 可能是与 Daphile 的连接出了问题，光驱在不在还不知道
     const tip = k === "nodb" ? "光盘读到了，但连不上曲名服务器，轨号列表也没取到。请检查 Daphile 能不能上网，再点右上角「重新读取」。" : d.err[2];
     document.getElementById("pick-count").textContent = "";
     reset(cdMsg(d.err[1], tip, k === "reading" || k === "moving"));
@@ -793,6 +890,7 @@ const Views = (() => {
     cdKeep = d.ok ? d : null;
     clearTimeout(cdTimer); cdTok++;
     const drive = d.ok || d.err[0] !== "nodrive";
+    if (d.ok) cdSetDrive(true);   // 读不出的情况在 cdPaint 里记
     cdTools(drive, false);
     if (!d.ok) {
       cdPaint(d);
@@ -810,7 +908,7 @@ const Views = (() => {
             <div class="artist">${esc((d.named && t0.albumArtist) || "未知艺人")}</div>
             <div class="meta">${d.tracks.length} 首 · ${fmtTime(total)}</div>
             <div class="np-fmt"><span>CD</span><span>44.1 kHz</span><span>16 bit</span></div>
-            <div class="actions cd-actions"><button class="pill" data-cdall>＋ 整张加入</button></div>
+            <div class="actions cd-actions"><button class="pill" data-cdall>＋ 全部播放</button></div>
           </div>
         </div>
         ${note ? `<div class="cd-note">${esc(note)}</div>` : ""}
@@ -923,13 +1021,13 @@ const Views = (() => {
   async function go(view, arg) {
     current = { view, arg };
     content().onclick = null;
-    // 播放列表详情专用的标题行布局（数量居中、右侧按钮），换页面时清掉
-    document.querySelector(".detail-head").classList.remove("centered");
+    // 标题行右侧的按键（播放列表的「删除」「加入」「播放」），换页面时清掉
     const va = document.getElementById("view-act"); va.innerHTML = ""; va.onclick = null;
     document.getElementById("cd-tools").hidden = view !== "cd";                    // 右上角的「重新读取」「弹出」只在 CD 页出现
     document.getElementById("picker").classList.toggle("is-cd", view === "cd");
-    const ft = document.getElementById("fav-tools");                                // 右上角的「删除」键只在「我的喜爱」出现
-    ft.hidden = view !== "favorites"; ft.innerHTML = ""; ft.onclick = null;
+    const ft = document.getElementById("fav-tools");                                // 右上角的「删除」键：我的喜爱、播放列表、播放列表里的曲目
+    ft.hidden = !["favorites", "playlists", "playlist"].includes(view); ft.innerHTML = ""; ft.onclick = null;
+    va.hidden = false;
     if (view !== "cd") clearTimeout(cdTimer);
     if (TOP.has(view)) setCols(view);   // 换分类时重设一栏/两栏；进入详情时左栏保持不动
     // 两栏里从详情再点进下一层（艺人 → 专辑，有返回栈）：左栏再缩到 1/5，专辑页占 4/5；返回到详情恢复 2/5
@@ -951,7 +1049,8 @@ const Views = (() => {
   function showPicker(on, swiped) {
     const p = document.getElementById("picker");
     const app = document.getElementById("app");
-    const clearDrag = () => { p.style.transform = p.style.transition = ""; };
+    const main = document.getElementById("main");
+    const clearDrag = () => { p.style.transform = p.style.transition = main.style.transition = ""; app.style.removeProperty("--pick-dx"); };
     if (on) {
       closeTok++;
       clearDrag();
@@ -961,6 +1060,7 @@ const Views = (() => {
       return;
     }
     if (p.hidden) return;
+    if (swiped) main.style.transition = "padding-left .18s ease-in";   // 和窗口滑出用同一条曲线，「当前播放」的左边一直贴着窗口右边线
     app.classList.remove("picker-open");   // 「当前播放」同时移回原位
     if (pager) { pager.stop(); pager = null; }
     if (listPager) { listPager.stop(); listPager = null; }
@@ -1145,12 +1245,20 @@ const Views = (() => {
      分隔条、输入框上不接管；竖向移动留给列表滚动 */
   /* 选曲窗口跟手左移（x ≤ 0） */
   let pd = null;
+  /* 「当前播放」跟着窗口右边线走：窗口左移多少（x ≤ 0），主区左边让出的宽度就少多少（style.css 的 --pick-dx） */
+  const mainFollow = (x, trans) => {
+    document.getElementById("main").style.transition = trans;
+    const st = document.getElementById("app").style;
+    if (x) st.setProperty("--pick-dx", x + "px"); else st.removeProperty("--pick-dx");
+  };
   function pickDrag(x, t) {
     const p = document.getElementById("picker");
+    x = Math.max(x, -p.offsetWidth);                            // 最多拉到整个窗口藏进边栏
     if (!pd) { pd = { x: 0, t: 0, v: 0 }; p.style.transition = "none"; }
     if (pd.t) pd.v = (x - pd.x) / Math.max(8, t - pd.t);        // 速度 px/ms，负数是向左
     pd.x = x; pd.t = t;
     p.style.transform = `translateX(${x}px)`;
+    mainFollow(x, "none");
   }
   /* 松手：拉过窗口宽度 1/4（或快速一甩）就关闭，不够就弹回；返回是否关闭 */
   function pickRelease(ok) {
@@ -1161,7 +1269,8 @@ const Views = (() => {
     if (ok && (-x > p.offsetWidth / 4 || (v < -0.6 && -x > 30))) { showPicker(false, true); return true; }
     p.style.transition = "transform .2s ease";
     p.style.transform = "";
-    setTimeout(() => { if (!p.style.transform) p.style.transition = ""; }, 220);
+    mainFollow(0, "padding-left .2s ease");                     // 弹回：「当前播放」跟着一起回去
+    setTimeout(() => { if (!p.style.transform) { p.style.transition = ""; if (!pd) document.getElementById("main").style.transition = ""; } }, 220);
     return false;
   }
 
@@ -1232,10 +1341,11 @@ const Views = (() => {
     }
   }
 
-  /* 保存新播放列表后：如果窗口正开着「所有播放列表」，重新载入左栏 */
+  /* 保存新播放列表后：如果窗口正开着「播放列表」，重新载入一览 */
   function refreshPlaylists() {
     if (pickerOpen() && rootView === "playlists") { stack.length = 0; go("playlists"); }
   }
 
-  return { init, markRows, refreshPlaylists, openFolder, pickerOpen, closePicker: () => showPicker(false) };
+  return { init, markRows, refreshPlaylists, openFolder, pickerOpen, closePicker: () => showPicker(false),
+    cdProbe, onDrive: (f) => { cdDriveHooks.push(f); if (cdDrive !== null) f(cdDrive); } };
 })();

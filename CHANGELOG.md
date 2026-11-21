@@ -3,6 +3,32 @@
 All notable changes to this project are documented here.
 Versions follow [Semantic Versioning](https://semver.org/).
 
+## [0.6.1] - 2026-11-21
+
+### Added
+- **Playlists** (`playlists()` / `playlistDetail()` in `views.js`): one column (`TWO` now only `artists`). Each row and the header of a playlist page carry two round `.add-btn` buttons in `.pl-acts` (`plBtns()`): **play** (`.pl-play`, dark grey with a `PLAY` triangle) and **add** (grey with `PLUS`, same component as album/folder rows). Play asks through `ask()` (danger when the queue is not empty), closes the library (`showPicker(false)`), scrolls Now Playing to the top, powers on if needed and sends `playlistcontrol cmd:load playlist_id:X`. Add sends `cmd:add`, never plays or closes the library, and flashes the blue check (`flashDone`).
+- Generic selection delete `selDelete({items, el, rowSel, ask, remove, done, reload})`, shared by My Favorites, the playlist list and a playlist's tracks; header `#fav-tools` shows on `favorites`, `playlists` and `playlist`. While selecting, row taps only toggle `.sel` and the row/header play/add buttons are hidden.
+  - Playlist list: re-reads the list and checks id and name, then `playlists delete playlist_id:X` for each pick (`LMS.deletePlaylist`).
+  - Playlist tracks: `LMS.playlistDeleteTrack(id, index)` → `playlists edit cmd:delete playlist_id:X index:i` (0-based splice, rewrites the .m3u). Re-reads the tracks and aborts if the count or any picked position/id changed, then deletes from the highest index down.
+  - Track tables in selection mode draw a 16 px circle in the title cell (`.tracks.selecting td.ttl::before`) and hide the heart.
+- Sidebar **CD播放器** icon is grey (`.nav-cd.nodrv`) when the CDplayer plugin reports no drive (-1); remembered in `localStorage` `daphile.cddrive` (`cdProbe()`, `Views.onDrive()`); not probed at start when a drive was seen last time.
+- `Resume` in `app.js` (`localStorage` `daphile.resume.<player>` = `{idx, id, t}`): a device that was moved to while paused is stopped on the right track in LMS, which keeps no position in that state. While the device is still stopped on that track (index and track id match), the page shows it paused at `t`; play sends `playlist index idx` + `time t` (`LMS.resumeAt`), dragging the progress bar only changes `t`. Any other state drops the record.
+
+### Changed
+- **＋ 整张加入** / **＋ 整个加入** renamed **＋ 全部播放** (album page, folder album page, CD page); still only appends.
+- Device name in the Now Playing header is display-only grey text (`#cur-dev-name`); the `#dev-menu` dropdown and its code (`devMenu`, `closeDevMenu`, hover list entry) are gone. Devices are switched only with the AirPlay button; the name follows.
+- All delete buttons (`.fav-tools .fav-main`: **删除** and **删除（N）**) are light red: `rgba(255,59,48,.14)` with `var(--danger)` text, dark theme `rgba(255,69,58,.22)`.
+- Swipe and tap closing of the library: Now Playing follows the library edge (`--pick-dx`, `mainFollow()`), and both use the same easing and duration (`.2s ease-in` closing, `.22s ease-out` opening).
+- My Favorites selection circles 22 px → 16 px (check mark 11 px).
+- `switchPlayer()` sets `S.cmdAt`, so a poll reply from the previous device is discarded.
+
+### Removed
+- `.detail-head.centered`, the playlist two-column layout, and the per-row playlist delete.
+
+### Fixed
+- AirPlay transfer while paused started playback on the new device: `playlist index` puts the player into BUFFERING, where LMS ignores `pause` (StreamingController state table, Pause/BUFFERING = `_NoOp`). `LMS.transfer()` now powers on with `power 1 1` (no resume-on-power) and, when the source was not playing, only sends `playlist index <idx> "" 1` (noplay, the stopped player just moves to the track); the position is kept by `Resume`. Playing transfers are unchanged.
+- Search box font size 13 px → 16 px (`.filter`), so iOS no longer zooms in on focus.
+
 ## [0.6.0] - 2026-11-20
 
 ### Added

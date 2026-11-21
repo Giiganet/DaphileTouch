@@ -109,7 +109,7 @@ img { display: block; }
 .filter {
   width: 200px; height: 32px; padding: 0 12px;
   border: 1px solid var(--line); border-radius: 16px;
-  background: var(--row); color: var(--text); font: inherit; font-size: 13px;
+  background: var(--row); color: var(--text); font: inherit; font-size: 16px;   /* 不小于 16px：iOS 点进输入框才不会自动放大页面 */
 }
 .filter:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
 .content {
@@ -340,25 +340,10 @@ body.bigvu-open .picker { bottom: calc(226px + env(safe-area-inset-bottom, 0px))
 }
 .cur-label { flex: none; }
 .cur-sep { flex: none; margin: 0 2px 0 6px; font-weight: 400; color: var(--text3); }
-/* 设备名做成可点的下拉按钮：灰色常规字 + 小箭头，按下/展开时有浅底 */
-.cur-dev {
-  display: inline-flex; align-items: center; gap: 4px; min-width: 0;
-  height: 28px; padding: 0 6px; border: 0; border-radius: 7px; background: none;
-  font: inherit; font-weight: 400; color: var(--text2); cursor: pointer;
-}
+/* 设备名：只显示、不能点，灰色常规字；换设备用播放条的 AirPlay，转移后这里跟着变 */
+.cur-dev { display: inline-flex; align-items: center; min-width: 0; padding: 0 6px; font-weight: 400; color: var(--text2); }
 .cur-dev-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.cur-dev svg { flex: none; transition: transform .2s ease; }
-.cur-dev:hover, .cur-dev:active, .cur-dev.open { background: var(--hover); color: var(--text); }
-.cur-dev.open svg { transform: rotate(180deg); }
 .cur-dev[hidden], .cur-sep[hidden] { display: none; }
-/* 下拉菜单：挂在标题栏下方，复用播放设备弹窗的列表样式 */
-.dev-menu {
-  position: absolute; top: 46px; z-index: 30;
-  min-width: 250px; max-width: 340px; padding: 6px;
-  background: var(--bar-solid); border: 1px solid var(--line); border-radius: 14px;
-  box-shadow: 0 12px 32px rgba(0, 0, 0, .18);
-}
-.dev-menu[hidden] { display: none; }
 .cur-table .cv { width: 44px; padding: 0 4px; }
 /* 当前播放列表封面：图片自带灰色圆角底色（加载中、加载失败时可见）；无封面时用同尺寸的灰色方块 */
 .cur-table .cv img, .cur-table .cv .ph { display: block; width: 32px; height: 32px; border-radius: 4px; object-fit: cover; background: var(--row); }
@@ -389,9 +374,11 @@ body.bigvu-open .picker { bottom: calc(226px + env(safe-area-inset-bottom, 0px))
   padding-top: env(safe-area-inset-top, 0px);
   animation: slide-in .22s ease-out;
 }
-/* 窗口打开时，「当前播放」整体向右让出窗口宽度，跟着滑入动画一起移动 */
-.main { transition: padding-left .22s ease-out; }
-.app.picker-open .main { padding-left: var(--pw); }
+/* 窗口打开时，「当前播放」整体向右让出窗口宽度，左边一路贴着窗口右边线：
+   打开和窗口滑入（slide-in .22s ease-out）同一条曲线，关闭和窗口缩回（slide-out .2s ease-in）同一条曲线 */
+.main { transition: padding-left .2s ease-in; }
+/* --pick-dx：手指向左滑动关闭时窗口已左移的距离（≤ 0，views.js pickDrag 写入）；「当前播放」跟着窗口右边线一起向左展开 */
+.app.picker-open .main { padding-left: calc(var(--pw) + var(--pick-dx, 0px)); transition: padding-left .22s ease-out; }
 .app.resizing .main { transition: none; }
 .app.resizing, .app.resizing * { cursor: col-resize !important; user-select: none; -webkit-user-select: none; }
 /* 分隔条：窗口右边缘 16px 宽的拖动区，中间一根小竖条提示可拖 */
@@ -465,11 +452,22 @@ body.bigvu-open .picker { bottom: calc(226px + env(safe-area-inset-bottom, 0px))
 /* 没有返回、也没有标题时整行隐藏；.icon-btn 的 inline-flex 会盖掉 hidden，这里补回来 */
 .detail-head[hidden], .detail-head [hidden] { display: none; }
 .head-act:empty { display: none; }
-/* 播放列表详情：数量居中，「整个加入」靠右 */
-.detail-head.centered { display: grid; grid-template-columns: 1fr auto; align-items: center; }
-.detail-head.centered .view-title { display: none; }
-.detail-head.centered #view-count { grid-column: 1; justify-self: start; margin: 0; }
-.detail-head.centered .head-act { grid-column: 2; justify-self: end; display: flex; }
+/* ---------- 播放列表：每行右侧「播放」「加入」两个圆钮；标题行右侧同样两个；删除在窗口标题栏 ---------- */
+.detail-head .head-act:not(:empty):not([hidden]) { margin-left: auto; padding-left: 8px; display: flex; flex: none; }
+.pl-list li { cursor: pointer; }
+/* 两个圆钮：「播放」深灰圆白三角（深色主题浅灰圆深三角），「加入」沿用 .add-btn 灰圆「＋」；间距 16px，两键的点按区（各外扩 8px）不重叠 */
+.pl-acts { display: inline-flex; align-items: center; gap: 16px; flex: none; }
+.pl-acts .pl-play { background: #55555a; color: #fff; }
+.pl-acts .pl-play:hover { background: #3a3a3e; color: #fff; }
+:root[data-theme="dark"] .pl-acts .pl-play { background: #b4b4ba; color: #1c1c1e; }
+:root[data-theme="dark"] .pl-acts .pl-play:hover { background: #d0d0d5; color: #1c1c1e; }
+.pl-acts .add-btn:disabled { opacity: .45; cursor: default; }
+/* 窗口窄（如 iPad 竖屏，窗口约 340px）：去掉行首图标，给名称多留地方 */
+.pick-detail { container-type: inline-size; }
+@container (max-width: 420px) {
+  .pl-list li .lead { display: none; }
+  .pl-list li { gap: 8px; }
+}
 /* 信息面板里可点的专辑名 */
 .np-link { padding: 0; border: 0; background: none; font: inherit; color: var(--accent); text-align: left; cursor: pointer; word-break: break-word; }
 .np-link:active { opacity: .6; }
@@ -484,7 +482,7 @@ body.bigvu-open .picker { bottom: calc(226px + env(safe-area-inset-bottom, 0px))
 .picker .album-head .art { width: 160px; height: 160px; }
 .picker .album-head h2 { font-size: 19px; }
 .picker .album-head .artist { font-size: 15px; }
-.picker .actions { margin: 12px 0 10px; }   /* 整张加入按钮离格式标签再远一点 */
+.picker .actions { margin: 12px 0 10px; }   /* 全部播放按钮离格式标签再远一点 */
 
 /* 目录行尾「＋」（文件夹、收藏夹、专辑目录）：灰圆 24px，点击区向外扩 8px，手指好点 */
 .add-btn {
@@ -642,7 +640,7 @@ body.bigvu-open .picker { bottom: calc(226px + env(safe-area-inset-bottom, 0px))
 .cur-table tbody tr.sw-del { opacity: 0; transition: opacity .18s ease; }
 .list li.sw-del { opacity: 0; transition: transform .2s ease, opacity .18s ease; }
 
-/* 加入中：当前播放标题行的转圈提示；被点的「整张加入」/「＋」变灰不可再点 */
+/* 加入中：当前播放标题行的转圈提示；被点的「全部播放」/「＋」变灰不可再点 */
 .cur-adding { display: inline-flex; align-items: center; gap: 6px; color: var(--accent); font-size: 13px; white-space: nowrap; animation: upd-in .2s ease-out; }
 .cur-adding[hidden] { display: none; }
 .cur-adding svg { animation: add-spin .8s linear infinite; }
@@ -759,7 +757,7 @@ body.q-adding #cur-list .empty .e-add { display: inline-flex; align-items: cente
 /* 与斑马纹（--row）同一冷灰色系、比它浅：盖在白行上比斑马纹浅一档，盖在斑马纹行上再加深一点点 */
 :root { --glow: rgba(60, 60, 100, .035); }
 :root[data-theme="dark"] { --glow: rgba(210, 210, 230, .05); }
-#cur-list, #content, #pick-list, #sidebar, #device-list, #dev-menu-list { position: relative; }
+#cur-list, #content, #pick-list, #sidebar, #device-list { position: relative; }
 .hover-glow {
   position: absolute; left: 0; top: 0; z-index: 3; pointer-events: none;
   border-radius: 8px; background: var(--glow); opacity: 0;
@@ -773,11 +771,14 @@ body.q-adding #cur-list .empty .e-add { display: inline-flex; align-items: cente
 /* 侧栏入口：在主题开关上方，和上面的分类一样是一整行 */
 .nav-cd { margin: 0 0 6px; flex: none; }
 .nav-cd[hidden] { display: none; }
+/* 没检测到 CD 机：图标变灰（入口仍可点开，页面里会说明没检测到 CD 机） */
+.nav-cd.nodrv .ico { stroke: #c2c2c8; }   /* 比提示文字的灰（--text3）再浅一档 */
+:root[data-theme="dark"] .nav-cd.nodrv .ico { stroke: #5c5c62; }
 /* 封面位置：查不到封面时是一张光盘图标；查到了换成图片 */
 .cd-art { display: flex; align-items: center; justify-content: center; overflow: hidden; }
 .cd-art svg { width: 46%; height: 46%; fill: none; stroke: var(--text3); stroke-width: 1.1; stroke-linecap: round; }
 .cd-art img { width: 100%; height: 100%; object-fit: cover; display: block; }
-/* 专辑区只有「整张加入」。「重新读取」（线框）和「弹出」（黑色实心）管的是光驱，放在窗口右上角、关闭键左边；
+/* 专辑区只有「全部播放」。「重新读取」（线框）和「弹出」（黑色实心）管的是光驱，放在窗口右上角、关闭键左边；
    没检测到 CD 机时「弹出」灰色不可点，字样「无 CD 机」；读盘或仓门在动时两个都变淡、暂时不能点 */
 .cd-actions { flex-wrap: wrap; gap: 8px; }
 .cd-actions .pill, .cd-tools .pill { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
@@ -806,25 +807,35 @@ body.q-adding #cur-list .empty .e-add { display: inline-flex; align-items: cente
 .lcd-cover.cd-mark { display: flex; align-items: center; justify-content: center; background: var(--text); color: var(--bg); font-size: 14px; font-weight: 800; letter-spacing: .5px; }
 .lcd-cover.cd-mark::after { content: "CD"; }
 
-/* ---------- 我的喜爱：标题栏的「删除」键和选择状态 ---------- */
+/* ---------- 窗口标题栏的「删除」键和选择状态（我的喜爱、播放列表、播放列表里的曲目共用） ---------- */
 .fav-tools { display: inline-flex; align-items: center; gap: 8px; flex: none; margin: 0 2px 0 6px; }
 .fav-tools[hidden] { display: none; }
 .fav-tools .pill { white-space: nowrap; }
 .fav-tools .pill:disabled { opacity: .45; cursor: default; }
-/* 和「＋ 整张加入」同一种实心按键。主键「删除」（带垃圾桶）黑底、宽度和「＋ 整张加入」一样；
-   选择状态下「全选」「取消」用稍浅的深灰，「删除（N）」变红 */
-.fav-tools .fav-main { display: inline-flex; align-items: center; justify-content: center; gap: 5px; min-width: 102px; }   /* 「＋ 整张加入」实测宽 101.6px */
+/* 「删除」「删除（N）」统一浅红底、红字（带垃圾桶）；选择状态下「全选」「取消」用深灰 */
+.fav-tools .fav-main { display: inline-flex; align-items: center; justify-content: center; gap: 5px; min-width: 102px; }   /* 「＋ 全部播放」实测宽 101.6px */
 .fav-tools .fav-del { min-width: 114px; }   /* 「删除（N）」个位数时宽度不跳动 */
 .fav-tools .fav-main svg { flex: none; }
 .fav-tools .fav-b { background: #55555a; color: #fff; }
 :root[data-theme="dark"] .fav-tools .fav-b { background: #b4b4ba; color: #1c1c1e; }
-.fav-tools .fav-del { background: var(--danger); color: #fff; }
+.fav-tools .fav-main { background: rgba(255, 59, 48, .14); color: var(--danger); }
+:root[data-theme="dark"] .fav-tools .fav-main { background: rgba(255, 69, 58, .22); }
 /* 选择状态：每行前面一个圆圈，点行打勾 */
 .list.selecting li::before {
-  content: ""; width: 22px; height: 22px; border-radius: 50%; flex: none; margin-left: 2px;
+  content: ""; width: 16px; height: 16px; border-radius: 50%; flex: none; margin: 0 2px 0 4px;   /* 和曲名的字差不多高，不抢眼 */
   box-shadow: inset 0 0 0 1.5px var(--text3);
 }
-.list.selecting li.sel::before {
+/* 曲目表（播放列表里的曲目）：圆圈画在标题格左侧 */
+.tracks.selecting tbody td.ttl { position: relative; padding-left: 32px; }
+.tracks.selecting tbody td.ttl::before {
+  content: ""; position: absolute; left: 8px; top: 50%; margin-top: -8px; width: 16px; height: 16px; border-radius: 50%;
+  box-shadow: inset 0 0 0 1.5px var(--text3);
+}
+.tracks.selecting td.fav > * { visibility: hidden; }   /* 选择时心形先藏起来，免得以为能点 */
+.tracks.selecting tbody tr { cursor: pointer; }
+/* 播放列表一览：选择时收起每行的「加入」「播放」 */
+.pl-list.selecting .pl-acts { display: none; }
+.list.selecting li.sel::before, .tracks.selecting tbody tr.sel td.ttl::before {
   box-shadow: none;
-  background: var(--danger) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='white' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 12.5l4 4 8-9'/%3E%3C/svg%3E") center / 14px no-repeat;
+  background: var(--danger) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='white' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 12.5l4 4 8-9'/%3E%3C/svg%3E") center / 11px no-repeat;
 }

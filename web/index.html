@@ -21,7 +21,7 @@
   function later() { fit(); clearTimeout(t); t = setTimeout(fit, 350); }   // 旋转动画结束后再量一次，取最终尺寸
   fit(); addEventListener("resize", later); addEventListener("orientationchange", later); addEventListener("pageshow", later);
   if (window.visualViewport) visualViewport.addEventListener("resize", later); })();</script>
-<link rel="stylesheet" href="style.css?v=0.6.0">
+<link rel="stylesheet" href="style.css?v=0.6.1">
 </head>
 <body>
 <div class="app" id="app">
@@ -51,16 +51,14 @@
         <span class="ts-track" aria-hidden="true"><span class="ts-knob"></span></span>
         <svg class="ts-moon" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 14.6A8.2 8.2 0 0 1 9.4 4a8.2 8.2 0 1 0 10.6 10.6z"/></svg>
       </button>
-      <div class="app-ver" id="app-ver" aria-label="版本">v0.6.0</div>
+      <div class="app-ver" id="app-ver" aria-label="版本">v0.6.1</div>
     </div>
   </nav>
 
   <!-- 主内容区：始终显示「当前播放」列表 -->
   <main class="main" id="main">
     <header class="topbar">
-      <h1 class="view-title"><span class="cur-label">当前播放设备</span><span class="cur-sep" id="cur-sep" hidden>·</span><button class="cur-dev" id="cur-dev" type="button" aria-haspopup="listbox" aria-expanded="false" hidden><span class="cur-dev-name" id="cur-dev-name"></span><svg viewBox="0 0 12 12" width="10" height="10" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2.5 4.5 6 8l3.5-3.5"/></svg></button></h1>
-      <!-- 标题里的播放设备下拉菜单（放在 h1 外面，免得被标题的省略裁掉） -->
-      <div class="dev-menu" id="dev-menu" hidden><ul class="device-list" id="dev-menu-list" role="listbox"></ul></div>
+      <h1 class="view-title"><span class="cur-label">当前播放设备</span><span class="cur-sep" id="cur-sep" hidden>·</span><span class="cur-dev" id="cur-dev" hidden><span class="cur-dev-name" id="cur-dev-name"></span></span></h1>
       <span class="cur-adding" id="cur-adding" hidden><svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><circle cx="8" cy="8" r="6" fill="none" stroke="currentColor" stroke-opacity=".25" stroke-width="2"/><path d="M8 2a6 6 0 0 1 6 6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>正在加入…</span>
       <span class="count cur-count" id="cur-count"></span>
       <!-- 存为播放列表：列表 + 加号（仿 SF Symbols text.badge.plus） -->
@@ -262,9 +260,9 @@
 </div>
 
 <div class="toast" id="toast" hidden></div>
-<script src="api.js?v=0.6.0"></script>
-<script src="views.js?v=0.6.0"></script>
-<script src="rhythm.js?v=0.6.0"></script>
-<script src="app.js?v=0.6.0"></script>
+<script src="api.js?v=0.6.1"></script>
+<script src="views.js?v=0.6.1"></script>
+<script src="rhythm.js?v=0.6.1"></script>
+<script src="app.js?v=0.6.1"></script>
 </body>
 </html>

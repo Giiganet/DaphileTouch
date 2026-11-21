@@ -9,6 +9,30 @@ const fmtTime = (s) => {
 
 const S = { st: null, cur: null, polledAt: 0, seeking: false, queueKey: "", fails: 0, cmdAt: 0 };
 
+/* 暂停时 AirPlay 转过来的设备：LMS 里是「停止」状态，停在那一首但没有进度。
+   网页按设备记住进度 {idx, id, t}（存 localStorage），显示成「暂停在 t 秒」；按播放时从 t 秒接着放，
+   拖进度条只改记住的位置、不发命令。设备一旦不再是停在这一首（开始放了、换了曲、清空了），记录作废。 */
+const Resume = {
+  key: (pid) => "daphile.resume." + pid,
+  get(pid = LMS.playerId) { try { return JSON.parse(localStorage.getItem(this.key(pid)) || "null"); } catch (_) { return null; } },
+  set(pid, r) { try { r ? localStorage.setItem(this.key(pid), JSON.stringify(r)) : localStorage.removeItem(this.key(pid)); } catch (_) { /* 忽略 */ } },
+  /* 用当前设备的 status 核对；还有效就返回记录，否则删掉 */
+  check(st) {
+    const r = this.get();
+    if (!r) return null;
+    const cur = (st.playlist_loop || []).find((x) => Number(x["playlist index"]) === Number(st.playlist_cur_index));
+    if (st.mode === "stop" && Number(st.playlist_cur_index) === r.idx && cur && String(cur.id) === r.id) return r;
+    this.set(LMS.playerId, null);
+    return null;
+  },
+  /* 轮询拿到的状态：有记录就显示成暂停在记住的位置 */
+  apply(st) {
+    const r = this.check(st);
+    if (r) { st.mode = "pause"; st.time = r.t; st._resume = r; }
+    return st;
+  },
+};
+
 function toast(msg) {
   const t = $("toast");
   t.textContent = msg;
@@ -25,7 +49,7 @@ async function act(fn, errMsg = "操作失败") {
 }
 
 /* ---------- 加入中：当前播放标题行转圈，曲目进入列表后消失 ----------
-   整张加入要等 LMS 处理完才返回，会有几秒空白；这期间显示「正在加入…」。
+   「全部播放」（整张加入）要等 LMS 处理完才返回，会有几秒空白；这期间显示「正在加入…」。
    命令返回后，等轮询看到 playlist_timestamp 变化（曲目已进列表）再隐藏，最多再等 5 秒兜底。 */
 const Adding = { n: 0, ts: "", until: 0 };
 const showAdding = (on) => { const el = $("cur-adding"); if (el) el.hidden = !on; document.body.classList.toggle("q-adding", on); };
@@ -75,11 +99,11 @@ function render() {
   mb.classList.toggle("muted", muted);
   mb.setAttribute("aria-label", !canMute ? "静音不可用（此设备为固定音量输出）" : muted ? "取消静音" : "静音");
   mb.title = !canMute ? "此设备为固定音量输出，无法静音" : "";
-  // 「当前播放设备」标题后显示设备名（换设备后下一次刷新即更新）
+  // 「当前播放设备」标题后显示设备名（灰色，只显示不能点）；用播放条的 AirPlay 换设备后，下一次刷新即更新
   const devName = st.player_name || "";
   if ($("cur-dev-name").textContent !== devName) {
     $("cur-dev-name").textContent = devName;
-    $("cur-dev").title = devName ? "当前播放设备：" + devName + "（点按换到另一台设备，连同它自己的播放列表）" : "";
+    $("cur-dev").title = devName ? "当前播放设备：" + devName + "（换设备请用播放条右侧的 AirPlay）" : "";
     $("cur-dev").hidden = $("cur-sep").hidden = !devName;
   }
 
@@ -347,7 +371,7 @@ async function poll() {
     const st = await LMS.status();
     S.fails = 0;
     if (sentAt >= S.cmdAt) {
-      S.st = st;
+      S.st = Resume.apply(st);
       S.polledAt = Date.now();
       render();
       checkAdding();
@@ -654,6 +678,7 @@ function bindPlayer() {
     // 先在界面上切换（按键图标、进度走停、频谱），不等 LMS 回复；命令失败时下一次轮询会改回真实状态
     const st = S.st;
     const wasOff = st && Number(st.power) !== 1, wasStop = st && st.mode === "stop";
+    const r = st && st._resume; if (r) st._resume = null;   // 记住的进度只用一次（连按两下不会再跳一次）
     if (st && !wasOff && (S.cur || wasStop)) {
       const now = Date.now();
       if (st.mode === "play") st.time = Number(st.time || 0) + (now - S.polledAt) / 1000;
@@ -664,7 +689,8 @@ function bindPlayer() {
     }
     act(async () => {
       if (wasOff) await LMS.power(1);
-      await (wasStop ? LMS.play() : LMS.toggle());
+      if (r) { Resume.set(LMS.playerId, null); await LMS.resumeAt(r.idx, r.t); }   // 暂停时转过来的：从记住的位置接着放
+      else await (wasStop ? LMS.play() : LMS.toggle());
     });
   };
   // 静音不用 LMS 的 muting（RaopBridge 1.8.12 下 AirPlay 设备会出错），改为：记住音量 → 设 0；取消时恢复
@@ -795,7 +821,7 @@ function bindPlayer() {
 
   /* 播放设备：列出网络上的 LMS 播放器，打勾的是当前控制的设备 */
   const SPEAKER = `<svg viewBox="0 0 24 24" width="22" height="22"><rect x="6" y="2.5" width="12" height="19" rx="2.5" fill="currentColor"/><circle cx="12" cy="14.5" r="3.4" fill="var(--bar-solid)"/><circle cx="12" cy="7" r="1.6" fill="var(--bar-solid)"/></svg>`;
-  /* 把播放器列表填进某个 ul：播放条的 AirPlay 弹窗和标题下拉菜单共用 */
+  /* 把播放器列表填进播放条的 AirPlay 弹窗 */
   async function fillDevices(ul) {
     ul.innerHTML = `<li class="dev-empty">正在查找设备…</li>`;
     try {
@@ -812,13 +838,14 @@ function bindPlayer() {
     } catch (err) { ul.innerHTML = `<li class="dev-empty">查找失败：${esc(err.message)}</li>`; }
   }
   const devName = (li) => li.querySelector(".dev-name").firstChild.textContent.trim();
-  /* 「当前播放」旁的下拉菜单：换成控制另一台设备（各设备的队列互不影响） */
+  /* 网页改为控制另一台设备（AirPlay 转移完成后调用） */
   function switchPlayer(li, msg = "已切换到 ") {
     const pid = li.dataset.pid;
     if (pid === LMS.playerId) return;
     LMS.setPlayer(pid);
     try { localStorage.setItem("daphile.player", pid); } catch (err) { /* 忽略 */ }
     S.queueKey = ""; S.npKey = null;
+    S.cmdAt = Date.now();          // 切换前发出、还没回来的旧设备轮询作废（否则会拿旧设备的状态核对新设备记住的进度）
     toast(msg + devName(li));
     poll();
     syncRhythmDelay();
@@ -831,7 +858,11 @@ function bindPlayer() {
     transferTo.busy = true;
     toast("正在转到 " + devName(li) + "…");
     try {
-      await LMS.transfer(LMS.playerId, pid);
+      // 当前设备若是「暂停时转过来、停着」的，LMS 报不出进度，用网页记住的位置
+      const r = S.st && S.st._resume;
+      const { resume } = await LMS.transfer(LMS.playerId, pid, r ? r.t : null);
+      Resume.set(pid, resume);
+      if (r) Resume.set(LMS.playerId, null);
       switchPlayer(li, "已转到 ");
     } catch (err) {
       toast(err.message === "当前播放列表是空的" ? "当前没有正在播放的内容，无需转移" : "转移失败：" + err.message);
@@ -845,14 +876,10 @@ function bindPlayer() {
   // 播放条上的 AirPlay 弹窗：把正在播放的内容转到另一台设备（切换喇叭）
   const devBox = $("devices");
   const closeDevices = () => { devBox.hidden = true; $("btn-devices").classList.remove("on"); };
-  // 「当前播放设备 · 设备名 ⌄」标题下拉菜单：换成控制另一台设备，连同它自己的播放列表（切换环境）
-  const devMenu = $("dev-menu"), devBtn = $("cur-dev");
-  const closeDevMenu = () => { devMenu.hidden = true; devBtn.classList.remove("open"); devBtn.setAttribute("aria-expanded", "false"); };
 
   $("btn-devices").onclick = (e) => {
     e.stopPropagation();
     if (!devBox.hidden) return closeDevices();
-    closeDevMenu();
     devBox.hidden = false;
     $("btn-devices").classList.add("on");
     fillDevices($("device-list"));
@@ -861,26 +888,10 @@ function bindPlayer() {
     const li = pickedDevice(e); if (!li) return;
     closeDevices(); transferTo(li);
   };
-  devBtn.onclick = (e) => {
-    e.stopPropagation();
-    if (!devMenu.hidden) return closeDevMenu();
-    closeDevices();
-    // 菜单左边对齐设备名按钮
-    const b = devBtn.getBoundingClientRect(), t = devMenu.parentElement.getBoundingClientRect();   // 父级是 position:relative 的标题栏
-    devMenu.style.left = Math.max(8, Math.round(b.left - t.left - 6)) + "px";
-    devMenu.hidden = false;
-    devBtn.classList.add("open"); devBtn.setAttribute("aria-expanded", "true");
-    fillDevices($("dev-menu-list"));
-  };
-  $("dev-menu-list").onclick = (e) => {
-    const li = pickedDevice(e); if (!li) return;
-    closeDevMenu(); switchPlayer(li);
-  };
   document.addEventListener("click", (e) => {
     if (!devBox.hidden && !e.target.closest(".dev-wrap")) closeDevices();
-    if (!devMenu.hidden && !e.target.closest("#dev-menu, #cur-dev")) closeDevMenu();
   });
-  document.addEventListener("keydown", (e) => { if (e.key === "Escape") { closeDevMenu(); closeDevices(); } });
+  document.addEventListener("keydown", (e) => { if (e.key === "Escape") closeDevices(); });
 
   /* 「时间 + 进度条 + 剩余时间」整组与频谱共用一格：点一下整组切换；进度条模式下在进度条上按住左右拖动才是跳转；
      频谱模式下按住往上拖，拉出播放条上方的大频谱（这一格随即换回进度条） */
@@ -935,6 +946,8 @@ function bindPlayer() {
       const t = ratio(ev) * dur;
       S.st.time = t; S.polledAt = Date.now();
       S.seeking = false;
+      const r = S.st._resume;
+      if (r) { r.t = Math.round(t * 10) / 10; Resume.set(LMS.playerId, r); return; }   // 停着的设备：只改记住的位置，按播放时从这里放
       act(() => LMS.seek(t));
     };
   });
@@ -1025,7 +1038,6 @@ function bindHoverGlow() {
     ["pick-list", "li"],                                                  // 选曲窗口左栏
     ["sidebar", ".nav-item"],                                             // 左侧分类
     ["device-list", "li:not(.offline)"],                                  // AirPlay 设备弹窗
-    ["dev-menu-list", "li:not(.offline)"],                                // 标题里的设备菜单
   ];
   const still = matchMedia("(prefers-reduced-motion: reduce)");
   AREAS.forEach(([id, sel]) => {
@@ -1096,7 +1108,15 @@ async function start() {
   document.addEventListener("visibilitychange", () => { if (!document.hidden) poll(); });
   if (typeof Views !== "undefined") Views.init();
   // CD播放器入口：LMS 装了 CDplayer 插件才显示（只读查询，查不到就一直不显示）
-  LMS.cdHas().then((has) => { $("nav-cd").hidden = !has; }).catch(() => {});
+  LMS.cdHas().then((has) => {
+    $("nav-cd").hidden = !has;
+    if (!has) return;
+    // 没接 CD 机时侧栏图标变灰。上次记着「接着光驱」就先不查（有盘时查一次会让光驱读盘），点开 CD 页时自然会更新
+    Views.onDrive((d) => $("nav-cd").classList.toggle("nodrv", d === false));
+    let last = null; try { last = localStorage.getItem("daphile.cddrive"); } catch (_) { /* 读不到就查 */ }
+    if (last === "0") $("nav-cd").classList.add("nodrv");   // 先按上次的样子显示，查到结果再改
+    if (last !== "1") Views.cdProbe();
+  }).catch(() => {});
 }
 
 start();
