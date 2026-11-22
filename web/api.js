@@ -72,6 +72,12 @@ const LMS = (() => {
     volume: (v) => p(["mixer", "volume", String(v)]),
     clear: () => p(["playlist", "clear"]),
     deleteAt: (idx) => p(["playlist", "delete", String(idx)]),
+    /* 队列第 idx 首的真实文件地址（只读）。曲库里已删掉的曲目 status 不列出来，要靠它问 */
+    /* 停着时把当前位置移到第 idx 首但不开始放（noplay） */
+    cueAt: (idx) => p(["playlist", "index", String(idx), "", "1"]),
+    queuePath: async (idx) => (await p(["playlist", "path", String(idx), "?"]))._path || "",
+    /* 把一首插到正在放的那首后面（不重新打乱随机顺序），返回它在队列里的位置 */
+    insertNext: async (trackId) => Number((await p(["playlistcontrol", "cmd:insert", "track_id:" + trackId])).index),
     /* 清除当前播放但保留正在播放的那首：先从队尾往前删它后面的，再逐个删第 0 首直到它成为第一首。
        删的都不是当前曲目，LMS 只顺移当前位置，不会中断播放。返回删掉的曲目数。 */
     clearOthers: async () => {
@@ -174,6 +180,16 @@ const LMS = (() => {
     favExists: (trackId) => q(["favorites", "exists", String(trackId)]),
     favAdd: (url, title) => q(["favorites", "add", "url:" + url, "title:" + title, "type:audio"]),
     favDelete: (index) => q(["favorites", "delete", "item_id:" + index]),
+    /* 喜爱核对：喜爱只记文件 url，文件被删、改名或换格式后不会跟着变。
+       dirList 直接列出磁盘上某个文件夹里的文件（只读，不碰曲库；文件夹不存在时 count 为 0）；
+       不用 songinfo url: 查——LMS 发现文件不在会顺手把它从曲库删掉，NAS 临时断开时会误删。
+       folderFiles 取同一文件夹里新文件的 url；favAddAt 在指定位置插入一项（原来这个位置及后面的往后挪一位），用来「原地换成新文件」 */
+    dirList: (path) => q(["readdirectory", 0, 5000, "folder:" + path]),
+    mediaDirs: async () => (await q(["pref", "mediadirs", "?"]))._p2 || [],
+    /* 某个文件夹（url）里的曲目：取新文件的 url（LMS 自己的写法，括号、& 等不转义）。
+       注意别和上面的 folderByUrl 重名——那个带 return_top:1，返回文件夹本身，信息面板点专辑名要用它 */
+    folderFiles: (url) => q(["musicfolder", 0, 5000, "url:" + url, "tags:u"]),
+    favAddAt: (index, url, title) => q(["favorites", "add", "item_id:" + index, "url:" + url, "title:" + title, "type:audio"]),
     /* 节奏灯用：文件路径（CUE 分轨带 #起-止）、格式、大小、码率、时长 */
     fileInfo: async (trackId) => ({ id: trackId, ...(((await q(["titles", 0, 1, "track_id:" + trackId, "tags:uofrdT"])).titles_loop || [])[0] || {}) }),
     trackUrl: async (trackId) => ((await q(["titles", 0, 1, "track_id:" + trackId, "tags:u"])).titles_loop || [])[0] || {},

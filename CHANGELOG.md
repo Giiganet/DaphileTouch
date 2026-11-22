@@ -3,6 +3,22 @@
 All notable changes to this project are documented here.
 Versions follow [Semantic Versioning](https://semver.org/).
 
+## [0.6.2] - 2026-11-22
+
+### Added
+- **My Favorites file check** (`favCheck()` in `views.js`, exported as `Views.checkFiles`): after the favorites load, each file is checked read-only with `readdirectory` on its folder (never `songinfo url:`, which drops library rows as a side effect). A missing file with a same-stem audio file in the folder is marked `已换成 <EXT>` and can be repointed in place (row tap, or header **更新（N）** `.fav-fix`) via `favReplace()`, which takes the new URL from `musicfolder` (`LMS.folderFiles`, LMS escaping differs from JS); a missing file without a twin is marked `文件已不在` and a tap asks (via `ask()`) to remove it from the favorites. Unreadable volumes are treated as offline and not marked.
+- **Now Playing file check** (`app.js`: `QF`, `checkQueue()`, `fixLoop()`, `fixQueue()`): runs on a `playlist_timestamp` change and every 60 s, using the same `Views.checkFiles`. Changed rows get `.q-gone` with an orange `.q-note`; the header button `#btn-qfix` **更新（N）** appears only when something changed. `fixQueue()` asks first, refuses while shuffle is on, leaves the playing/paused track alone, re-checks each pick with `playlist path <i> ?` (`LMS.queuePath`, read-only), then works from the highest index down: a twin is appended (`addTracks`), moved behind the old entry and the old entry deleted; a missing file is deleted. Tapping a changed row asks about that track only.
+- `fixLoop()`: when `status` lists fewer tracks than `playlist_tracks` (tracks dropped from the library by a rescan still occupy queue slots), the real positions are read with `playlist path` (queues up to 500 tracks) and placeholder rows (`qhidden`) are inserted, so `playlist index` values used for tap/move/delete stay correct. `Rhythm.setTrack` ignores placeholders.
+- `LMS.folderFiles(url)`, `LMS.queuePath(i)`, and unused `LMS.cueAt(i)` / `LMS.insertNext(id)`.
+
+### Changed
+- Shuffle and repeat use `--text3` when off (`#btn-shuffle:not(.on), #btn-repeat:not(.on)`).
+- Repeat icon is a capsule of two arcs with arrows, 22 px, stroke 1.73, matching the visual weight of shuffle; the repeat-one `1` (`.badge-one::after`) is 7.5 px and centred.
+- `bindSwipe()` keeps only the Now Playing mode; the unused reveal/over branches and the `.list li` swipe CSS are removed. Generic list rows accept `it.tap`.
+
+### Fixed
+- None in released versions. (A duplicate `folderByUrl` key added during development, which broke opening the album folder from the track info panel, was renamed `folderFiles` before release.)
+
 ## [0.6.1] - 2026-11-21
 
 ### Added

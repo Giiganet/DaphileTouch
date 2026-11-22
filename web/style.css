@@ -243,13 +243,15 @@ img { display: block; }
 #btn-play .ic-pause, #btn-play.playing .ic-play { display: none; }
 #btn-play.playing .ic-pause { display: block; }
 .icon-btn.on { color: var(--accent); }
+/* 随机、重复没打开时用更淡的灰（比上一首 / 下一首淡一档），打开后变蓝，一眼分得出开关 */
+#btn-shuffle:not(.on), #btn-repeat:not(.on) { color: var(--text3); }
 .icon-btn:active { background: var(--hover); }
 .icon-btn:disabled { opacity: .35; }
 .badge-one { position: relative; }
 /* 单曲重复：在循环图标正中叠一个小「1」 */
 .badge-one::after {
-  content: "1"; position: absolute; left: 50%; top: 50%; transform: translate(-50%, -52%);
-  font-size: 9px; font-weight: 800; line-height: 1;
+  content: "1"; position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%);
+  font-size: 7.5px; font-weight: 800; line-height: 1;
 }
 
 .lcd { flex: 1; min-width: 0; display: flex; align-items: center; gap: 10px; }
@@ -619,7 +621,7 @@ body.bigvu-open .picker { bottom: calc(226px + env(safe-area-inset-bottom, 0px))
 .fav-btn:disabled { opacity: .5; }
 .list li .fav-btn { margin-right: 2px; }
 
-/* 向左滑动删除：行内容左移，右侧露出红底垃圾篓；滑够距离（变深红）松手即删除 */
+/* 当前播放向左滑动删除：行内容左移，右侧露出红色按钮（最宽 76px，垃圾篓居中）；拉满（变深红）松手即删除 */
 .content, .cur-list { overflow-x: hidden; }
 /* 红底只画在右侧露出的那一段（宽 = 左移距离），跟着行内容走：
    之前把红色铺在整行 tr 底下，各单元格单独平移，iPad 上单元格之间、上下边缘的亚像素缝会透出红色，看起来像一圈红框 */
@@ -627,18 +629,15 @@ body.bigvu-open .picker { bottom: calc(226px + env(safe-area-inset-bottom, 0px))
 .cur-table tbody tr.swiping:nth-child(even), .cur-table tbody tr.swiping:nth-child(even) > td { background: var(--row); }
 .cur-table tbody tr.swiping > td { transform: translateX(var(--sx, 0px)); transition: transform .2s ease; }
 .cur-table tbody tr.swiping > td:last-child { position: relative; overflow: visible; }
-.list li.swiping { background: var(--bg); transform: translateX(var(--sx, 0px)); transition: transform .2s ease; }
-.cur-table tbody tr.swiping > td:last-child::after, .list li.swiping::after {
+.cur-table tbody tr.swiping > td:last-child::after {
   content: ""; position: absolute; top: 0; bottom: 0; left: 100%;
   width: calc(-1 * var(--sx, 0px)); transition: width .2s ease;
-  background: #ff3b30 url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='white' stroke-width='1.9' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M4 6.5h16M9.5 6.5V4.5h5v2M6.5 6.5l1 13.5h9l1-13.5M10 10.5v6M14 10.5v6'/%3E%3C/svg%3E") no-repeat right 22px center / 22px 22px;
+  background: #ff3b30 url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='white' stroke-width='1.9' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M4 6.5h16M9.5 6.5V4.5h5v2M6.5 6.5l1 13.5h9l1-13.5M10 10.5v6M14 10.5v6'/%3E%3C/svg%3E") no-repeat center / 22px 22px;
 }
-.cur-table tbody tr.sw-move > td, .cur-table tbody tr.sw-move > td:last-child::after,
-.list li.sw-move, .list li.sw-move::after { transition: none; }
-.cur-table tbody tr.swipe-arm > td:last-child::after, .list li.swipe-arm::after { background-color: #d70015; }
+.cur-table tbody tr.sw-move > td, .cur-table tbody tr.sw-move > td:last-child::after { transition: none; }
+.cur-table tbody tr.swipe-arm > td:last-child::after { background-color: #d70015; }
 /* 拉够松手：停在原位整体淡出（连同红底），不再整行滑出露出整条红色 */
 .cur-table tbody tr.sw-del { opacity: 0; transition: opacity .18s ease; }
-.list li.sw-del { opacity: 0; transition: transform .2s ease, opacity .18s ease; }
 
 /* 加入中：当前播放标题行的转圈提示；被点的「全部播放」/「＋」变灰不可再点 */
 .cur-adding { display: inline-flex; align-items: center; gap: 6px; color: var(--accent); font-size: 13px; white-space: nowrap; animation: upd-in .2s ease-out; }
@@ -654,9 +653,6 @@ body.q-empty .cur-adding { display: none; }
 body.q-adding #cur-list .empty .e-msg { display: none; }
 body.q-adding #cur-list .empty .e-add { display: inline-flex; align-items: center; gap: 8px; color: var(--accent); }
 #cur-list .empty .e-add svg { animation: add-spin .8s linear infinite; }
-
-/* 当前播放左滑：垃圾篓始终在红色按钮正中（按钮最宽 76px，拉满即停） */
-.cur-table tbody tr.swiping > td:last-child::after { background-position: center; }
 
 /* 侧栏「播放列表」分组：灰色小标题换成一条细横线，两端留空，不顶头 */
 .nav-sep { height: 1px; margin: 12px 10px 8px; background: color-mix(in srgb, var(--text3) 40%, transparent); }
@@ -839,3 +835,23 @@ body.q-adding #cur-list .empty .e-add { display: inline-flex; align-items: cente
   box-shadow: none;
   background: var(--danger) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='white' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 12.5l4 4 8-9'/%3E%3C/svg%3E") center / 11px no-repeat;
 }
+
+/* 我的喜爱：文件已不在的行（被删除、改名、换格式）整行变淡，下面一行橙色小字说明；点它问怎么处理 */
+.list li.fav-gone .thumb { opacity: .45; }
+.list li.fav-gone .grow { color: var(--text3); }
+.list li .sub.gone { color: #c96a00; font-size: 12px; }
+:root[data-theme="dark"] .list li .sub.gone { color: #ff9f0a; }
+.fav-tools .fav-fix { white-space: nowrap; }
+
+/* 当前播放：文件已不在 / 已换格式的曲目。整行变淡，标题后跟一句橙色说明（不换行，行高不变）；
+   标题栏出现「更新（N）」，颜色同「我的喜爱」里的更新按钮 */
+.cur-table tbody tr.q-gone td { color: var(--text3); }
+.cur-table tbody tr.q-gone .cv img { opacity: .45; }
+/* 标题过长时只省略标题，说明始终露在后面 */
+.cur-table .q-cell { display: flex; align-items: baseline; min-width: 0; }
+.cur-table .q-tt { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.cur-table .q-note { color: #c96a00; font-size: 12px; margin-left: 8px; white-space: nowrap; flex: none; }
+:root[data-theme="dark"] .cur-table .q-note { color: #ff9f0a; }
+.pill.q-fix { height: 28px; padding: 0 12px; font-size: 13px; margin-right: 6px; white-space: nowrap; background: #55555a; color: #fff; }
+:root[data-theme="dark"] .pill.q-fix { background: #b4b4ba; color: #1c1c1e; }
+.pill.q-fix[hidden] { display: none; }

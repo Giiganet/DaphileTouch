@@ -49,7 +49,7 @@ async function act(fn, errMsg = "操作失败") {
 }
 
 /* ---------- 加入中：当前播放标题行转圈，曲目进入列表后消失 ----------
-   「全部播放」（整张加入）要等 LMS 处理完才返回，会有几秒空白；这期间显示「正在加入…」。
+   「全部播放」要等 LMS 处理完才返回，会有几秒空白；这期间显示「正在加入…」。
    命令返回后，等轮询看到 playlist_timestamp 变化（曲目已进列表）再隐藏，最多再等 5 秒兜底。 */
 const Adding = { n: 0, ts: "", until: 0 };
 const showAdding = (on) => { const el = $("cur-adding"); if (el) el.hidden = !on; document.body.classList.toggle("q-adding", on); };
@@ -123,7 +123,7 @@ function render() {
     $("lcd-cover").parentNode.classList.remove("cd-mark");
   }
   renderTime();
-  if (typeof Rhythm !== "undefined") Rhythm.setTrack(cur ? cur.id : null);
+  if (typeof Rhythm !== "undefined") Rhythm.setTrack(cur && !cur.qhidden ? cur.id : null);   // 补出来的「已不在」曲目没有曲库 id
   renderNowPlaying(cur);
   renderQueue(loop, curIdx);
   if (typeof Views !== "undefined") Views.markRows(cur);
@@ -322,6 +322,110 @@ async function saveQueue() {
 }
 
 /* 队列里当前曲目的标记：播放 ▶、暂停 ❙❙、停止 ■。用 SVG 画，避免 iOS 把符号显示成彩色 emoji */
+/* ---------- 当前播放：曲目文件被删除 / 换了格式 ----------
+   当前播放列表只记着当初加进来的那个文件。文件被删、改名，或 .wav 换成了 .flac，
+   这一首就放不出来；曲库重扫后，LMS 的 status 甚至不再列出它（但队列里还占着位置，
+   后面曲目的「playlist index」会整体错一位，点歌、删除都会对不上）。
+   所以：
+   1. status 列出的首数少于 playlist_tracks 时，逐个问「playlist path」取真实地址，按真实位置重排（fixLoop）；
+   2. 到磁盘上核对每首的文件还在不在（和「我的喜爱」同一套，只读目录，NAS 整个读不到时不标）；
+   3. 有异动才在标题栏出现「更新（N）」：换了格式的原位换成新文件，已不在的移出当前播放。
+   每次队列变化（playlist_timestamp）核对一次，之后每分钟再看一次（文件变化不会改队列时间戳）。 */
+const QF = { tried: "", at: 0, busy: false, ts: "", paths: null, gone: new Map(), ver: 0 };
+const stemOf = (u) => { const f = (typeof Views !== "undefined" && Views.fileOf(u)) || ""; return f.slice(f.lastIndexOf("/") + 1).replace(/\.[^.]+$/, ""); };
+function fixLoop(st) {
+  const n = Number(st.playlist_tracks) || 0, loop = st.playlist_loop || [];
+  if (!QF.paths || QF.ts !== String(st.playlist_timestamp) || QF.paths.length !== n || loop.length >= n) return st;
+  const out = []; let j = 0;
+  for (let i = 0; i < n; i++) {
+    const v = loop[j], url = QF.paths[i];
+    if (v && v.url === url) { out.push({ ...v, "playlist index": i }); j++; }
+    else out.push({ id: "q-hidden-" + i, title: stemOf(url) || "（未知曲目）", url, "playlist index": i, qhidden: 1 });
+  }
+  return { ...st, playlist_loop: out };
+}
+async function checkQueue() {
+  const st = S.st;
+  if (!st || QF.busy || typeof Views === "undefined") return;
+  const ts = String(st.playlist_timestamp), n = Number(st.playlist_tracks) || 0;
+  QF.busy = true; QF.tried = ts; QF.at = Date.now();
+  try {
+    let paths = null;
+    if ((st.playlist_loop || []).length < n && n <= 500) {   // status 最多取 500 首；更长的队列不逐首问，免得太慢
+      paths = new Array(n);
+      for (let i = 0; i < n; i += 8) {   // 8 个一批并发问，几百首也只要一两秒
+        await Promise.all(Array.from({ length: Math.min(8, n - i) }, (_, k) => LMS.queuePath(i + k).then((u) => { paths[i + k] = u; })));
+      }
+    }
+    if (!S.st || String(S.st.playlist_timestamp) !== ts) return;   // 核对期间队列又变了：下次再查
+    QF.ts = ts; QF.paths = paths;
+    const loop = fixLoop(S.st).playlist_loop || [];
+    const seen = new Map();
+    for (const t of loop) if (t.url && !seen.has(t.url)) seen.set(t.url, { url: t.url });
+    const items = [...seen.values()];
+    await Views.checkFiles(items);
+    if (!S.st || String(S.st.playlist_timestamp) !== ts) return;
+    const gone = new Map(items.filter((x) => x.gone).map((x) => [x.url, x.gone]));
+    const key = (m) => [...m].map(([u, g]) => u + ">" + (g.twin || "")).join("|");
+    if (key(gone) !== key(QF.gone) || paths) { QF.gone = gone; QF.ver++; S.queueKey = ""; S.st = fixLoop(S.st); render(); }
+  } catch (_) { /* 查不到就当没变化，下次再查 */ }
+  finally { QF.busy = false; }
+}
+/* 有异动的曲目：[{i, url, gone}]，按队列位置 */
+function queueGone() {
+  const loop = (S.st && S.st.playlist_loop) || [];
+  return loop.filter((t) => QF.gone.has(t.url)).map((t) => ({ i: Number(t["playlist index"]), url: t.url, title: t.title, gone: QF.gone.get(t.url) }));
+}
+function renderQfix() {
+  const b = $("btn-qfix"), n = queueGone().length;
+  b.hidden = !n;
+  b.textContent = n ? `更新（${n}）` : "";
+  b.title = n ? `有 ${n} 首的文件被删除或换了格式，点这里处理` : "";
+}
+/* 处理：换了格式的原位换成新文件（加到末尾 → 移到它后面 → 删掉旧的），已不在的移出当前播放。
+   从后往前做，前面的位置不受影响。正在播放 / 暂停的那首不动（删掉它会打断播放）；随机打开时不做（位置对不上） */
+async function fixQueue(picks) {
+  const st = S.st || {};
+  if (Number(st["playlist shuffle"]) > 0) return toast("随机播放打开时没法按原位置更新，请先关掉随机");
+  const cur = Number(st.playlist_cur_index), busy = st.mode !== "stop";
+  const keep = busy ? picks.filter((p) => p.i === cur) : [];
+  picks = picks.filter((p) => !keep.includes(p));
+  if (!picks.length) return toast("正在播放的这首先不动，停止后再更新");
+  const tw = picks.filter((p) => p.gone.twin), del = picks.length - tw.length;
+  const one = picks.length === 1 ? picks[0] : null;
+  const msg = one
+    ? (one.gone.twin ? `「${one.title}」原来的文件已不在，同一文件夹里有「${one.gone.twin}」。\n换成新文件（位置不变）？`
+                     : `「${one.title}」的文件找不到了，可能被删除、改名或移动过，放不出来。\n从当前播放移除？（不会删除任何音乐文件）`)
+    : [tw.length ? `${tw.length} 首换成同一文件夹里的新格式文件（位置不变）` : "", del ? `${del} 首文件已不在，移出当前播放` : ""].filter(Boolean).join("；") + "。\n不会删除任何音乐文件。";
+  const kept = keep.length ? "\n正在播放的那首先不动，停止后再更新。" : "";
+  if (!await ask({ title: one && !one.gone.twin ? "文件已不在" : "更新当前播放？", msg: msg + kept,
+    ok: one && !one.gone.twin ? "移除" : "更新", danger: !tw.length, icon: tw.length ? "" : "trash" })) return;
+  S.queueKey = "";
+  act(async () => {
+    // 动手前再核对一次：位置上还是那个文件才改，免得别处刚改过队列
+    for (const p of picks) if ((await LMS.queuePath(p.i)) !== p.url) throw new Error("当前播放刚刚有变化，请再点一次");
+    const dirs = new Map();
+    for (const p of tw) {
+      const d = p.url.slice(0, p.url.lastIndexOf("/"));
+      if (!dirs.has(d)) dirs.set(d, ((await LMS.folderFiles(d)).folder_loop || []));
+      const hit = dirs.get(d).find((x) => x.type === "track" && x.id && Views.fileOf(x.url).endsWith("/" + p.gone.twin));
+      p.newId = hit ? hit.id : null;
+    }
+    let cnt = Number(st.playlist_tracks) || 0, rep = 0, rm = 0, miss = 0;
+    for (const p of [...picks].sort((a, b) => b.i - a.i)) {
+      if (p.gone.twin && !p.newId) { miss++; continue; }   // 新文件还没进曲库：先不动
+      if (p.newId) {
+        await LMS.addTracks([p.newId]);                         // 加到末尾（停着时不会自动开始放）
+        if (cnt !== p.i + 1) await LMS.move(cnt, p.i + 1);      // 移到旧的那首后面
+        await LMS.deleteAt(p.i);                                // 删掉旧的，新的就到了原位置
+        rep++;
+      } else { await LMS.deleteAt(p.i); cnt--; rm++; }
+    }
+    QF.tried = ""; QF.gone = new Map(); QF.ver++;
+    toast([rep ? `已换成新文件 ${rep} 首` : "", rm ? `已移除 ${rm} 首` : "", miss ? `${miss} 首的新文件还没进曲库，稍后再试` : ""].filter(Boolean).join("，") || "没有可更新的曲目");
+  }, "更新失败");
+}
+
 const QMARK = {
   play: `<svg class="qmark" viewBox="0 0 12 12" aria-label="播放中"><path d="M2.5 1.5v9l8-4.5z"/></svg>`,
   pause: `<svg class="qmark" viewBox="0 0 12 12" aria-label="已暂停"><rect x="2" y="1.5" width="3" height="9" rx=".8"/><rect x="7" y="1.5" width="3" height="9" rx=".8"/></svg>`,
@@ -331,9 +435,10 @@ const QMARK = {
 function renderQueue(loop, curIdx) {
   if (S.dragging) return;   // 拖动排序时不重绘，松手后再刷新
   const mode = QMARK[S.st.mode] ? S.st.mode : "stop";
-  const key = Number(S.st.playlist_timestamp) + ":" + curIdx + ":" + mode;   // 播放 / 暂停切换时也要重绘标记
+  const key = Number(S.st.playlist_timestamp) + ":" + curIdx + ":" + mode + ":" + QF.ver;   // 播放 / 暂停切换时也要重绘标记
   if (key === S.queueKey) return;
   S.queueKey = key;
+  renderQfix();
   const box = $("cur-list");
   $("cur-count").textContent = loop.length ? loop.length + " 首" : "";
   $("btn-save").disabled = !loop.length;   // 空队列不能保存
@@ -350,10 +455,12 @@ function renderQueue(loop, curIdx) {
     const cls = i === curIdx ? "playing" : i < curIdx ? "past" : "";
     const cid = coverOf(t);
     const cd = isCd(t);   // CD 曲目：封面位置换成醒目的「CD」标记
-    return `<tr class="${cls}${cd ? " is-cd" : ""}" data-idx="${i}">
+    const g = QF.gone.get(t.url);
+    const note = g ? `<span class="q-note">${g.twin ? `已换成 ${esc(Views.extOf(g.twin))}` : "文件已不在"}</span>` : "";
+    return `<tr class="${cls}${cd ? " is-cd" : ""}${g ? " q-gone" : ""}" data-idx="${i}">
       <td class="num">${i === curIdx ? QMARK[mode] : i + 1}</td>
       <td class="cv">${cd ? `<span class="ph cd-tag" aria-label="CD 曲目">CD</span>` : cid ? `<img src="${LMS.cover(cid, 100)}" alt="" loading="lazy">` : `<span class="ph"></span>`}</td>
-      <td>${esc(t.title)}</td><td>${esc(t.artist || "")}</td><td>${esc(t.album || "")}</td>
+      <td>${note ? `<div class="q-cell"><span class="q-tt">${esc(t.title)}</span>${note}</div>` : esc(t.title)}</td><td>${esc(t.artist || "")}</td><td>${esc(t.album || "")}</td>
       <td class="dur">${t.duration ? fmtTime(t.duration) : ""}</td>
     </tr>`;
   }).join("")}</tbody></table>`;
@@ -371,10 +478,13 @@ async function poll() {
     const st = await LMS.status();
     S.fails = 0;
     if (sentAt >= S.cmdAt) {
-      S.st = Resume.apply(st);
+      S.st = fixLoop(Resume.apply(st));
       S.polledAt = Date.now();
       render();
       checkAdding();
+      const n = Number(S.st.playlist_tracks) || 0;
+      if (!n) { if (QF.gone.size) { QF.gone = new Map(); QF.ver++; } QF.tried = ""; }
+      else if (QF.tried !== String(S.st.playlist_timestamp) || Date.now() - QF.at > 60000) checkQueue();
     }
   } catch (e) {
     S.fails++;
@@ -527,109 +637,53 @@ function swallowClick(box) {
   setTimeout(() => box.removeEventListener("click", stop, true), 400);
 }
 
-/* 向左滑动删除：横向拖动整行，右边露出红底。
-   默认模式（当前播放列表）：红色按钮最宽 76px，垃圾篓居中；拉到按钮露满（垃圾篓到按钮正中）就停住不再变长，此时松手即删除，不够就弹回。
-   reveal 模式（喜爱页）：左滑只露出红色「移出」按钮并停住，再点按钮才删除；
-     按钮露满后手指不松开、继续左滑，就交给 over（选曲窗口跟手左移，够远松手关闭窗口）；
-     轻点这一行、点别处、右滑、列表滚动都会收回——误滑不会丢东西。
+/* 向左滑动删除（当前播放列表）：横向拖动整行，右边露出红色按钮（最宽 76px，垃圾篓居中）。
+   拉到按钮露满（72px 起，变深红）松手即删除，不够就弹回；之后几乎不再变长（最多 +4px 弹性）。
    rowSel：可滑动的行；onDelete(row) 负责删除并重绘（可返回 Promise）。拖动排序进行中不触发。 */
-function bindSwipe(box, rowSel, onDelete, { reveal = false, over = null } = {}) {
-  // 当前播放：按钮宽 76px，拉满（72px 起）可删，之后几乎不再变长（最多 +4px 弹性）；喜爱页（reveal）沿用原尺寸
-  const THRESH = reveal ? 88 : 72, MAX = reveal ? 110 : 76, ELASTIC = reveal ? 14 : 4, START = 10;
-  const OPEN = 88;   // reveal 模式停住时露出的按钮宽度；拉过一半松手就停住
-  const HANDOFF = 8;   // 按钮露满后再多拉这么多，才开始拖动页面（让按钮先完整露出一下）
-  let sw = null, open = null;   // open：reveal 模式下当前停住、露出按钮的那一行
+function bindSwipe(box, rowSel, onDelete) {
+  const THRESH = 72, MAX = 76, ELASTIC = 4, START = 10;
+  let sw = null;
   const back = (row) => {
-    if (row === open) open = null;
-    row.classList.remove("sw-move", "swipe-arm", "sw-del", "sw-open", "sw-press");
+    row.classList.remove("sw-move", "swipe-arm", "sw-del");
     row.style.setProperty("--sx", "0px");
     setTimeout(() => { if (!row.classList.contains("sw-move")) { row.classList.remove("swiping"); row.style.removeProperty("--sx"); } }, 220);
   };
-  const close = () => { if (open) back(open); };
   const remove = (row) => {
-    if (row === open) open = null;
-    row.classList.remove("sw-move", "sw-open", "sw-press");
+    row.classList.remove("sw-move");
     row.classList.add("sw-del");   // 停在原位淡出，不再整行滑出（否则会露出整条红底）
     Promise.resolve(onDelete(row)).catch(() => {})
       .finally(() => setTimeout(() => { if (row.isConnected) back(row); }, 2500));   // 删除失败或未重绘就弹回
   };
-  if (reveal) {
-    // 点列表以外的任何地方（标题栏、关闭钮、播放条……）或列表滚动，都把露出的按钮收回
-    document.addEventListener("pointerdown", (e) => { if (open && !box.contains(e.target)) close(); }, true);
-    // 列表滚动也收回：scroll 不冒泡，真正滚动的是外层容器，所以在 document 上用捕获阶段监听
-    document.addEventListener("scroll", (e) => { if (open && e.target.contains && e.target.contains(open)) close(); }, { capture: true, passive: true });
-  }
   box.addEventListener("pointerdown", (e) => {
     sw = null;
     if (e.button > 0 || S.dragging) return;
-    if (open && !open.isConnected) open = null;   // 列表已重绘
     const row = e.target.closest(rowSel);
-    let base = 0;
-    if (open) {
-      if (row !== open) { close(); swallowClick(box); return; }   // 点别的行：只收回，不当成点击
-      base = OPEN;
-      // 「移出」按钮是行右侧露出的红色区域（行已左移，按钮在行框右边）
-      if (e.clientX >= row.getBoundingClientRect().right) {
-        row.classList.add("sw-press");
-        sw = { row, press: true, x: e.clientX, y: e.clientY, id: e.pointerId };
-        return;
-      }
-    }
-    if (row && box.contains(row)) sw = { row, x: e.clientX, y: e.clientY, dx: -base, base, on: false, id: e.pointerId };
+    if (row && box.contains(row)) sw = { row, x: e.clientX, y: e.clientY, dx: 0, on: false, id: e.pointerId };
   });
   box.addEventListener("pointermove", (e) => {
     if (!sw || e.pointerId !== sw.id) return;
     const dx = e.clientX - sw.x, dy = e.clientY - sw.y;
-    if (sw.press) {   // 按着按钮移动了就不算点按钮
-      if (Math.hypot(dx, dy) > START) { sw.row.classList.remove("sw-press"); sw = null; }
-      return;
-    }
     if (!sw.on) {
       if (S.dragging || Math.abs(dy) > START) { sw = null; return; }   // 竖向移动是滚动或排序
-      if (sw.base ? Math.abs(dx) <= START : dx > -START) return;   // 已停住的行可左右拖，没停住的只认左滑
+      if (dx > -START) return;   // 只认左滑
       sw.on = true;
       sw.row.classList.add("swiping", "sw-move");
       try { box.setPointerCapture(sw.id); } catch (_) { /* 忽略 */ }
     }
     e.preventDefault();
-    const pull = Math.max(0, sw.base - dx);   // 行向左移的总距离
-    if (over) {   // 行最多左移到按钮露满；超出的部分交给页面
-      const extra = pull - OPEN - HANDOFF;
-      sw.dx = -Math.round(Math.min(pull, OPEN));
-      sw.row.style.setProperty("--sx", sw.dx + "px");
-      if (extra > 0 || sw.over) { sw.over = true; over.drag(-Math.max(0, extra), e.timeStamp); }
-      return;
-    }
+    const pull = Math.max(0, -dx);   // 行向左移的距离
     // 超过 MAX 后只有很小的弹性余量，最多再多出 ELASTIC
     const shown = pull <= MAX ? pull : MAX + ELASTIC * (1 - 1 / (1 + (pull - MAX) / 60));
     sw.dx = -Math.round(shown);
     sw.row.style.setProperty("--sx", sw.dx + "px");
-    if (!reveal) sw.row.classList.toggle("swipe-arm", -sw.dx >= THRESH);   // 变深红 = 松手就删；reveal 模式松手不删，不变色
+    sw.row.classList.toggle("swipe-arm", -sw.dx >= THRESH);   // 变深红 = 松手就删
   });
   const end = (ok) => (e) => {
     if (!sw || e.pointerId !== sw.id) return;
-    const { row, on, dx, base, press, over: handed } = sw;
+    const { row, on, dx } = sw;
     sw = null;
-    if (press) {   // 点了「移出」按钮
-      row.classList.remove("sw-press");
-      if (!ok) return;
-      swallowClick(box);
-      return remove(row);
-    }
-    if (!on) {   // 轻点已停住的行：收回，不当成点击
-      if (base) { close(); swallowClick(box); }
-      return;
-    }
+    if (!on) return;
     swallowClick(box);
-    if (handed && over.release(ok)) return back(row);   // 页面滑走了（窗口关闭）：这一行复位；没滑走就按下面停住或弹回
-    if (reveal) {
-      if (!ok || -dx < OPEN / 2) return back(row);
-      row.classList.remove("sw-move", "swipe-arm");
-      row.classList.add("sw-open");
-      row.style.setProperty("--sx", -OPEN + "px");
-      open = row;
-      return;
-    }
     if (!ok || -dx < THRESH) return back(row);
     remove(row);
   };
@@ -788,6 +842,7 @@ function bindPlayer() {
       msg: `当前播放的 ${n} 首会全部移出列表（曲库里的文件不受影响）。` })) act(LMS.clear, "清除失败");
   };
   $("btn-save").onclick = saveQueue;
+  $("btn-qfix").onclick = () => fixQueue(queueGone());
   $("np-meta").onclick = (e) => { const b = e.target.closest("[data-folder]"); if (b) Views.openFolder(b.dataset.folder); };
   bindReorder();
   // 当前播放：向左滑动一行即从队列移除
@@ -812,6 +867,10 @@ function bindPlayer() {
     if (!tr) {                   // 点在列表的空白处（不在任何一行上）：收起右侧详情
       if (!e.target.closest("button, a, input, th")) closeQueue();
       return;
+    }
+    if (tr.classList.contains("q-gone")) {   // 文件已不在 / 已换格式：放不出来，改为问要不要更新这一首
+      const p = queueGone().find((x) => String(x.i) === tr.dataset.idx);
+      if (p) return fixQueue([p]);
     }
     act(async () => {
       if (S.st && Number(S.st.power) !== 1) await LMS.power(1);

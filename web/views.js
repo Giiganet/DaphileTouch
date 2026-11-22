@@ -274,6 +274,7 @@ const Views = (() => {
       const li = e.target.closest("li[data-i]");
       if (!li) return;
       const it = items[li.dataset.i];
+      if (it.tap) return it.tap(li);   // 例如喜爱里文件已不在的行：点了问怎么处理，不再加入
       if (single(it)) return addRow(li, it.add, it.name);
       onPick(it);
     });
@@ -460,7 +461,8 @@ const Views = (() => {
      平时只有一个浅红色「删除」键；点它进入选择状态：点行打勾，标题栏变成「全选」「取消」「删除（N）」，
      点「删除（N）」弹窗确认后才删。没有「一键全部删除」，要全删就先点「全选」。
      opt.items 条目数组；opt.el 列表元素（加 selecting 类）；opt.rowSel 可勾选的行（带 data-i）；
-     opt.ask(picks, all) 返回 ask() 的参数；opt.remove(picks) 执行删除并返回条数；opt.done(n) 提示文字；opt.reload() 删后重读 */
+     opt.ask(picks, all) 返回 ask() 的参数；opt.remove(picks) 执行删除并返回条数；opt.done(n) 提示文字；opt.reload() 删后重读；
+     opt.tools() 可选：平时在「删除」前面多放的键（html，键上带 data-favtool），点了调 opt.tool(btn)。返回 draw()，供外部重画标题栏 */
   const TRASH = `<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h16M9.5 7V4.5h5V7M6 7l1 13h10l1-13M10 11v5.5M14 11v5.5"/></svg>`;
   function selDelete(opt) {
     const me = current, mine = () => current === me;
@@ -475,7 +477,7 @@ const Views = (() => {
         ? `<button class="pill fav-b" data-favpickall ${busy ? "disabled" : ""}>${all ? "全不选" : "全选"}</button>
            <button class="pill fav-b" data-favcancel ${busy ? "disabled" : ""}>取消</button>
            <button class="pill fav-main fav-del" data-favdo ${busy || !n ? "disabled" : ""}>${TRASH}删除${n ? `（${n}）` : ""}</button>`
-        : `<button class="pill fav-main" data-favsome ${busy || !opt.items.length ? "disabled" : ""}>${TRASH}删除</button>`;
+        : `${opt.tools ? opt.tools() : ""}<button class="pill fav-main" data-favsome ${busy || !opt.items.length ? "disabled" : ""}>${TRASH}删除</button>`;
     };
     const select = (on) => {
       selecting = on;
@@ -487,6 +489,7 @@ const Views = (() => {
       const b = e.target.closest("button");
       if (!b || b.disabled || !mine()) return;
       if (b.hasAttribute("data-favsome")) return select(true);
+      if (b.hasAttribute("data-favtool")) return opt.tool && opt.tool(b);
       if (b.hasAttribute("data-favcancel")) return select(false);
       if (b.hasAttribute("data-favpickall")) {   // 全选；已经全选时再点就是全不选
         const rs = rows(), on = rs.some((r) => !r.classList.contains("sel"));
@@ -513,6 +516,7 @@ const Views = (() => {
       draw();
     };
     draw();
+    return draw;
   }
   const whatOf = (picks, all, unit) => picks.length === 1 ? `「${picks[0].name}」` : all ? `全部 ${picks.length} ${unit}` : `选中的 ${picks.length} ${unit}`;
 
@@ -628,6 +632,79 @@ const Views = (() => {
     for (const p of [...picks].sort((a, b) => favLast(b.key) - favLast(a.key))) await LMS.favDelete(p.key);
     return picks.length;
   }
+  /* 喜爱核对：LMS 的喜爱只记文件路径，文件被删、改名、换格式后，这一项就放不出来了。
+     打开「我的喜爱」时到磁盘上看一眼（readdirectory 只读目录，不碰曲库）：
+     - 文件还在：不动；
+     - 文件不在，但同一文件夹里有同名不同格式的音乐文件（如 .wav 换成了 .flac）：标「已换成 FLAC」，可一键更新；
+     - 都找不到：标「文件已不在」，点这一行问要不要从喜爱删除。
+     所在的盘（如 NAS）整个读不到时当成暂时离线，什么都不标，免得误报。 */
+  const AUDIO_EXT = /\.(flac|wav|aiff?|m4a|alac|ape|dsf|dff|mp3|ogg|oga|opus|wv|mp4|aac|wma|mpc)$/i;
+  const fileOf = (url) => { try { return decodeURIComponent(String(url).replace(/^file:\/\//, "").replace(/#.*$/, "")); } catch (_) { return ""; } };
+  const splitPath = (path) => { const i = path.lastIndexOf("/"); return [path.slice(0, i), path.slice(i + 1)]; };
+  const stem = (n) => n.replace(/\.[^.]+$/, "");
+  const extOf = (n) => (/\.([^.]+)$/.exec(n) || ["", ""])[1].toUpperCase();
+  async function favCheck(items) {
+    const songs = items.filter((it) => !it.more && /^file:\/\//.test(it.url));
+    if (!songs.length) return 0;
+    const roots = await LMS.mediaDirs().catch(() => []);
+    const dirs = new Map(), mounts = new Map();
+    const list = async (d) => { if (!dirs.has(d)) dirs.set(d, LMS.dirList(d).then((r) => (r.fsitems_loop || []).map((x) => x.name)).catch(() => null)); return dirs.get(d); };
+    // 所在的盘：音乐根目录下的头两级（如 Network Drives/NAS）；读不到任何东西就当离线
+    const mountOf = (path) => {
+      const root = roots.find((r) => path.startsWith(r.replace(/\/$/, "") + "/"));
+      if (!root) return "";
+      const rest = path.slice(root.replace(/\/$/, "").length + 1).split("/");
+      return root.replace(/\/$/, "") + "/" + rest.slice(0, Math.min(2, rest.length - 1)).join("/");
+    };
+    const online = async (path) => {
+      const m = mountOf(path);
+      if (!mounts.has(m)) mounts.set(m, list(m).then((n) => !!(n && n.length)));
+      return mounts.get(m);
+    };
+    let bad = 0;
+    for (const it of songs) {
+      const path = fileOf(it.url);
+      if (!path || !mountOf(path)) continue;        // 不在音乐目录里（或读不到设置）：判断不了，不标
+      const [dir, name] = splitPath(path);
+      const names = await list(dir);
+      if (names === null) continue;                 // 查询失败：不下结论
+      if (names.includes(name)) continue;           // 文件还在
+      if (!names.length && !(await online(path))) continue;   // 整个盘读不到：可能暂时离线
+      const twin = it.url.includes("#") ? null : names.find((n) => n !== name && stem(n) === stem(name) && AUDIO_EXT.test(n));
+      it.gone = twin ? { dir, name, twin } : { dir, name };
+      bad++;
+    }
+    return bad;
+  }
+  /* 把一项喜爱换成同一文件夹里的新文件：在原位置插入新的，再删掉原来那项（插入后它往后挪了一位）。
+     新文件的 url 用 LMS 自己给的写法（括号、& 等它不转义，自己拼会对不上）；新文件已经在喜爱里了，就只删旧的 */
+  async function favReplace(arg, picks) {
+    const now = (await LMS.favorites(arg && arg.id)).loop_loop || [];
+    const map = new Map(now.map((f) => [favKey(f), f]));
+    if (picks.some((p) => { const f = map.get(p.key); return !f || f.name !== p.name || (f.url || "") !== p.url; })) throw new Error("喜爱列表刚刚有变化，请重新打开");
+    // 先查好每一项的新文件 url；同一个新文件对应几项（同一首收藏了两次）时，只把最前面那项换成新文件，其余的删掉
+    const have = new Set(now.map((f) => f.url)), jobs = [];
+    for (const p of picks) {
+      const dirUrl = p.url.slice(0, p.url.lastIndexOf("/"));
+      const hit = ((await LMS.folderFiles(dirUrl)).folder_loop || []).find((x) => x.url && fileOf(x.url).endsWith("/" + p.gone.twin));
+      if (hit) jobs.push({ p, url: hit.url });
+    }
+    const first = new Map();
+    for (const j of [...jobs].sort((a, b) => favLast(a.p.key) - favLast(b.p.key))) if (!have.has(j.url) && !first.has(j.url)) first.set(j.url, j);
+    // 从号大的往号小的做：原位插入再删旧的，条目数不变；只删的那种只影响后面的号
+    let n = 0;
+    for (const { p, url } of jobs.sort((a, b) => favLast(b.p.key) - favLast(a.p.key))) {
+      if (first.get(url) && first.get(url).p === p) {
+        const title = p.name === p.gone.name ? p.gone.twin : p.name;   // 名字原来就是文件名时跟着换，自己起的名字保留
+        await LMS.favAddAt(p.key, url, title);
+        const parts = String(p.key).split(".");
+        parts[parts.length - 1] = String(favLast(p.key) + 1);
+        await LMS.favDelete(parts.join("."));
+      } else await LMS.favDelete(p.key);
+      n++;
+    }
+    return n;
+  }
   async function favorites(arg) {
     const r = await LMS.favorites(arg && arg.id);
     // 行首：收藏夹用文件夹图标；曲目用专辑封面——image 为 music/<曲目id>/cover.png 时取该曲目封面，
@@ -645,13 +722,45 @@ const Views = (() => {
     list(arg ? arg.name : "", items, (f) => {
       if (f.more) open("favorites", { id: f.id, name: f.name });
     });
-    selDelete({
+    const me = current, mine = () => current === me;
+    const reload = () => go("favorites", arg);
+    const fixable = () => items.filter((it) => it.gone && it.gone.twin);
+    const fixAll = async (picks) => {
+      if (!picks.length) return;
+      const one = picks.length === 1 ? picks[0] : null;
+      if (!await ask({ title: "更新喜爱？", icon: "restart", ok: "更新",
+        msg: one ? `「${one.gone.name}」已不在，同一文件夹里有「${one.gone.twin}」。\n把这一项换成新文件？`
+          : `${picks.length} 项喜爱的原文件已不在，同一文件夹里都有同名的新格式文件（如 .wav 换成了 .flac）。\n把它们换成新文件？位置不变。` }) || !mine()) return;
+      try { const n = await favReplace(arg, picks); toast(n ? `已更新 ${n} 项喜爱` : "没找到新文件，未更新"); } catch (e) { toast("更新失败：" + e.message); }
+      if (mine()) reload();
+    };
+    const draw = selDelete({
       items, el: document.getElementById("ls"), rowSel: "li[data-i]",
       ask: (picks, all) => ({ title: "从喜爱删除？", msg: `将把${picks.length === 1 ? `「${picks[0].name}」` : all ? `这里的全部 ${picks.length} 项` : `选中的 ${picks.length} 项`}从「我的喜爱」里删除。只是移出喜爱，不会删除音乐文件。`, ok: "删除", danger: true, icon: "trash" }),
       remove: (picks) => favRemove(arg, picks),
       done: (n) => `已从喜爱删除 ${n} 项`,
-      reload: () => go("favorites", arg),   // 删后 LMS 重新编号，整页重读
+      reload,   // 删后 LMS 重新编号，整页重读
+      tools: () => (fixable().length ? `<button class="pill fav-b fav-fix" data-favtool>更新（${fixable().length}）</button>` : ""),
+      tool: () => fixAll(fixable()),
     });
+    // 列表先显示出来，再到磁盘上核对；核对完给失效的行加标记
+    if (!(await favCheck(items)) || !mine()) return;
+    const ls = document.getElementById("ls");
+    items.forEach((it, i) => {
+      if (!it.gone) return;
+      const li = ls && ls.querySelector(`li[data-i="${i}"]`);
+      if (!li) return;
+      li.classList.add("fav-gone");
+      const g = li.querySelector(".grow");
+      g.insertAdjacentHTML("beforeend", `<div class="sub gone">${it.gone.twin ? `已换成 ${esc(extOf(it.gone.twin))}：${esc(it.gone.twin)}` : "文件已不在（被删除、改名或移动）"}</div>`);
+      it.tap = it.gone.twin ? () => fixAll([it]) : async () => {
+        if (!await ask({ title: "文件已不在", icon: "trash", danger: true, ok: "从喜爱删除",
+          msg: `「${it.name}」在原来的位置找不到了，可能被删除、改名或移动过，放不出来。\n从「我的喜爱」里删除这一项？（不会删除任何音乐文件）` }) || !mine()) return;
+        try { await favRemove(arg, [it]); toast("已从喜爱删除 1 项"); } catch (e) { toast("删除失败：" + e.message); }
+        if (mine()) reload();
+      };
+    });
+    draw();
   }
 
   /* ---------- 搜索（侧边栏「搜索」或顶部搜索框） ---------- */
@@ -1346,6 +1455,8 @@ const Views = (() => {
     if (pickerOpen() && rootView === "playlists") { stack.length = 0; go("playlists"); }
   }
 
+  /* 当前播放列表的「更新」也用同一套磁盘核对（app.js checkQueue） */
   return { init, markRows, refreshPlaylists, openFolder, pickerOpen, closePicker: () => showPicker(false),
+    checkFiles: favCheck, fileOf, extOf,
     cdProbe, onDrive: (f) => { cdDriveHooks.push(f); if (cdDrive !== null) f(cdDrive); } };
 })();
