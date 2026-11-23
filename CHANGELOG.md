@@ -3,6 +3,14 @@
 All notable changes to this project are documented here.
 Versions follow [Semantic Versioning](https://semver.org/).
 
+## [0.6.4] - 2026-11-24
+
+### Changed
+- CD page (`cdShow()`): **＋ 全部播放** is replaced by `.pill.pill-play[data-cdplay]` **▶ 播放** and `.pill.pill-add[data-cdall]` **＋ 加入**, as on album pages. Play goes through `playNow()` (`ask()`, danger when the queue is not empty, wording 这张光盘); since a disc has no id that `playlistcontrol cmd:load` accepts, its loader is `playlist clear` → `LMS.cdAdd(url, title)` per track → `playlist index 0`. Add keeps the old add-all behaviour. `.cd-actions` drops its own 8 px gap and uses the 12 px gap of `.actions`.
+
+### Fixed
+- None.
+
 ## [0.6.3] - 2026-11-24
 
 ### Added

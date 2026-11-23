@@ -789,7 +789,7 @@ body.q-adding #cur-list .empty .e-add { display: inline-flex; align-items: cente
 .cd-art img { width: 100%; height: 100%; object-fit: cover; display: block; }
 /* 专辑区只有「全部播放」。「重新读取」（线框）和「弹出」（黑色实心）管的是光驱，放在窗口右上角、关闭键左边；
    没检测到 CD 机时「弹出」灰色不可点，字样「无 CD 机」；读盘或仓门在动时两个都变淡、暂时不能点 */
-.cd-actions { flex-wrap: wrap; gap: 8px; }
+.cd-actions { flex-wrap: wrap; }
 .cd-actions .pill, .cd-tools .pill { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
 .pill-line { background: transparent; color: var(--text); box-shadow: inset 0 0 0 1.5px var(--text3); }
 .cd-tools { display: inline-flex; align-items: center; gap: 8px; flex: none; margin: 0 2px 0 6px; }

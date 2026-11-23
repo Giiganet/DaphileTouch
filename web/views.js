@@ -1187,7 +1187,7 @@ const Views = (() => {
             <div class="artist">${esc((d.named && t0.albumArtist) || "未知艺人")}</div>
             <div class="meta">${d.tracks.length} 首 · ${fmtTime(total)}</div>
             <div class="np-fmt"><span>CD</span><span>44.1 kHz</span><span>16 bit</span></div>
-            <div class="actions cd-actions"><button class="pill" data-cdall>＋ 全部播放</button></div>
+            <div class="actions cd-actions"><button class="pill pill-play" data-cdplay>${PLAY}播放</button><button class="pill pill-add" data-cdall>${PLUS}加入</button></div>
           </div>
         </div>
         ${note ? `<div class="cd-note">${esc(note)}</div>` : ""}
@@ -1207,6 +1207,13 @@ const Views = (() => {
     const ttl = (i) => { const t = d.tracks[i]; return d.named ? t.title : `CD 第 ${t.num} 轨`; };
     content().onclick = (e) => {
       if (!d.ok) return;
+      /* 「播放」：CD 没有能整张载入的编号，只能清空当前播放 → 逐轨加入 → 从第一首开始放（先问，和专辑页一样） */
+      const pb = e.target.closest("[data-cdplay]");
+      if (pb) return playNow(pb, d.named ? d.tracks[0].album || "音乐 CD" : "音乐 CD", "这张光盘", async () => {
+        await LMS.clear();
+        for (let i = 0; i < d.tracks.length; i++) await LMS.cdAdd(d.tracks[i].url, ttl(i));
+        await LMS.jump(0);
+      });
       const all = e.target.closest("[data-cdall]");
       if (all) return addOnce(all, async () => {
         for (let i = 0; i < d.tracks.length; i++) await LMS.cdAdd(d.tracks[i].url, ttl(i));
