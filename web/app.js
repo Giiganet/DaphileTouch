@@ -116,12 +116,16 @@ function render() {
     if (img.dataset.src !== src) { img.dataset.src = src; if (src) img.src = src; }
     img.hidden = !src;   // 没封面时隐藏图片，露出外框的灰色圆角方块
     img.parentNode.classList.toggle("cd-mark", isCd(cur) && !src);   // CD 曲目又没封面：方块里写「CD」
+    const fm = src ? "" : fmtOfTrack(cur);                               // 普通曲目没封面：方块里写文件格式
+    img.parentNode.classList.toggle("fmt-mark", !!fm);
+    img.parentNode.dataset.fmt = fm;
   } else {
     $("lcd-title").textContent = loop.length ? "" : "未在播放";
     $("lcd-sub").textContent = "";
     $("lcd-cover").hidden = true;
-    $("lcd-cover").parentNode.classList.remove("cd-mark");
+    $("lcd-cover").parentNode.classList.remove("cd-mark", "fmt-mark");
   }
+  renderFav(cur);
   renderTime();
   if (typeof Rhythm !== "undefined") Rhythm.setTrack(cur && !cur.qhidden ? cur.id : null);   // 补出来的「已不在」曲目没有曲库 id
   renderNowPlaying(cur);
@@ -165,6 +169,64 @@ document.addEventListener("error", (e) => {
   if (img.tagName === "IMG" && img.isConnected && img.src !== BLANK) img.src = BLANK;
 }, true);
 
+/* ---------- 播放条曲名后面的心形 ----------
+   换歌时问一次 LMS 这首在不在喜爱里（favorites exists，只读）；在别处改了喜爱（选曲窗口的心形、「我的喜爱」删除 / 更新）
+   由 views.js 调 S.favChanged() 重新问；另外每 30 秒顺带再问一次，兜住在其他设备上改的。
+   点心形和选曲窗口里的一样：空心 → 加入喜爱；实心 → 移出喜爱。CD、曲库里已不在的曲目不显示 */
+const Fav = { key: "", on: false, at: 0, seq: 0, busy: false };
+const favable = (cur) => !!cur && !cur.qhidden && !isCd(cur) && Number(cur.id) > 0 && !!cur.url;
+function paintFav() {
+  const b = $("lcd-fav");
+  b.classList.toggle("on", Fav.on);
+  const t = Fav.on ? "移出喜爱" : "加入喜爱";
+  if (b.title !== t) { b.title = t; b.setAttribute("aria-label", t); }
+}
+async function checkFav(force) {
+  const cur = S.cur;
+  if (!favable(cur)) return;
+  const key = String(cur.id);
+  if (!force && key === Fav.key && Date.now() - Fav.at < 30000) return;
+  const seq = ++Fav.seq;
+  Fav.at = Date.now();
+  if (key !== Fav.key) { Fav.key = key; Fav.on = false; paintFav(); }   // 换歌：先灰，问到了再变
+  try {
+    const ex = await LMS.favExists(key);
+    if (seq !== Fav.seq || !S.cur || String(S.cur.id) !== key) return;
+    Fav.on = Number(ex.exists) > 0;
+    paintFav();
+  } catch (_) { /* 查不到就保持原样 */ }
+}
+function renderFav(cur) {
+  const show = favable(cur);
+  $("lcd-fav").hidden = !show;
+  if (!show) { Fav.key = ""; return; }
+  if (!Fav.busy) checkFav(false);
+}
+S.favChanged = () => { if (!Fav.busy) checkFav(true); };
+async function toggleFav() {
+  const cur = S.cur;
+  if (!favable(cur) || Fav.busy) return;
+  const b = $("lcd-fav"), key = String(cur.id), title = cur.title || "";
+  Fav.busy = true; b.disabled = true; Fav.seq++;
+  try {
+    const ex = await LMS.favExists(key);
+    if (Fav.on) {                                  // 实心红：再点即移出喜爱
+      if (Number(ex.exists)) await LMS.favDelete(ex.index);
+      Fav.on = false; toast(`已从喜爱移除：${title}`);
+    } else if (Number(ex.exists)) {               // 其实已在喜爱里（别处加的）：只刷新成实心
+      Fav.on = true; toast("已在喜爱列表中");
+    } else {
+      await LMS.favAdd(cur.url, title);
+      Fav.on = true; toast(`已加入喜爱：${title}`);
+    }
+    Fav.key = key; Fav.at = Date.now();
+    if (typeof Views !== "undefined" && Views.favChanged) Views.favChanged();   // 选曲窗口开着「我的喜爱」时跟着刷新
+  } catch (e) { toast("喜爱操作失败：" + e.message); }
+  Fav.busy = false; b.disabled = false;
+  if (!S.cur || String(S.cur.id) !== key) Fav.key = "";   // 操作期间换了歌：下次刷新重新问
+  paintFav();
+}
+
 /* 「正在播放」信息面板：只在换歌时重绘 */
 const JUNK = new Set(["No Artist", "No Album", "No Genre", "0", ""]);
 function renderNowPlaying(cur) {
@@ -176,7 +238,9 @@ function renderNowPlaying(cur) {
   const art = coverId ? LMS.cover(coverId, 300) : cdArt(cur);
   img.hidden = !art;
   $("np-art-empty").hidden = !!art;
-  $("np-art-empty").textContent = isCd(cur) && !art ? "CD" : "";
+  const npFmt = !art && cur && !isCd(cur) ? fmtOfTrack(cur) : "";   // 没封面：灰色方块里写文件格式
+  $("np-art-empty").textContent = isCd(cur) && !art ? "CD" : npFmt;
+  $("np-art-empty").classList.toggle("fmt", !!npFmt);
   if (art) img.src = art;
   $("np-title").textContent = cur ? cur.title || "未知曲目" : "未在播放";
   $("np-artist").textContent = cur && !JUNK.has(cur.artist || "") ? cur.artist : "";
@@ -214,6 +278,13 @@ function fmtChips(t) {
     !rate ? "" : rate >= 1e6 ? `${+(rate / 1e6).toFixed(1)}MHz` : `${+(rate / 1000).toFixed(1)}kHz`,
   ].filter(Boolean);
 }
+/* 没有封面时，缩略图里写文件格式。最多 4 个字母，32px 的小方块也放得下；
+   t.type 是 LMS 的三字母代号，补出来的「已不在」曲目没有 type，就从文件名的扩展名取 */
+const FMT_SHORT = { flc: "FLAC", flac: "FLAC", alc: "ALAC", aif: "AIFF", aiff: "AIFF", mp4: "AAC", ops: "OPUS", opus: "OPUS",
+  dsf: "DSD", dff: "DSD", wvp: "WV", ogg: "OGG" };
+const fmtShort = (x) => { const k = String(x || "").toLowerCase(); return FMT_SHORT[k] || k.toUpperCase().slice(0, 4); };
+const fmtOfTrack = (t) => !t || isCd(t) ? ""
+  : fmtShort(t.type || (/^file:/.test(t.url || "") ? Views.extOf(Views.fileOf(t.url)) : ""));
 
 /* ---------- 确认弹窗：代替浏览器自带的 confirm，返回 true（确认）/ false（取消） ----------
    title 标题；msg 说明（\n 换行）；ok 确认按钮文字；danger 确认按钮和图标用红色；icon 图标（trash / restart）。
@@ -459,7 +530,7 @@ function renderQueue(loop, curIdx) {
     const note = g ? `<span class="q-note">${g.twin ? `已换成 ${esc(Views.extOf(g.twin))}` : "文件已不在"}</span>` : "";
     return `<tr class="${cls}${cd ? " is-cd" : ""}${g ? " q-gone" : ""}" data-idx="${i}">
       <td class="num">${i === curIdx ? QMARK[mode] : i + 1}</td>
-      <td class="cv">${cd ? `<span class="ph cd-tag" aria-label="CD 曲目">CD</span>` : cid ? `<img src="${LMS.cover(cid, 100)}" alt="" loading="lazy">` : `<span class="ph"></span>`}</td>
+      <td class="cv">${cd ? `<span class="ph cd-tag" aria-label="CD 曲目">CD</span>` : cid ? `<img src="${LMS.cover(cid, 100)}" alt="" loading="lazy">` : (() => { const f = fmtOfTrack(t); return `<span class="ph${f ? " fmt" : ""}">${esc(f)}</span>`; })()}</td>
       <td>${note ? `<div class="q-cell"><span class="q-tt">${esc(t.title)}</span>${note}</div>` : esc(t.title)}</td><td>${esc(t.artist || "")}</td><td>${esc(t.album || "")}</td>
       <td class="dur">${t.duration ? fmtTime(t.duration) : ""}</td>
     </tr>`;
@@ -785,7 +856,23 @@ function bindPlayer() {
     requestAnimationFrame(() => { q.style.transform = "translateX(100%)"; });
     setTimeout(() => setQueue(false), 210);
   };
-  $("btn-queue").onclick = () => { if (q.hidden) setQueue(true); else closeQueue(); };
+  /* 详情和左侧窗口（选曲页、CD 页等）不同时开着，谁后打开谁留下：
+     - 打开详情时左侧窗口开着：先让详情出来，停一下再把左侧窗口缩回；
+     - 详情开着时从左侧边栏打开一个页面：先让左侧窗口出来，停一下再把详情收起（S.pickerOpened，views.js 调用）。
+     这样看得出是「新的来了、旧的走了」，而不是两边同时在动。两种情况共用一个计时器，后点的作废先点的 */
+  let swapTimer = 0;
+  const qOpen = () => !q.hidden && !q.classList.contains("closing");
+  $("btn-queue").onclick = () => {
+    clearTimeout(swapTimer);
+    if (!q.hidden) return closeQueue();
+    setQueue(true);
+    if (typeof Views !== "undefined" && Views.pickerOpen())
+      swapTimer = setTimeout(() => { if (qOpen() && Views.pickerOpen()) Views.closePicker(); }, 280);
+  };
+  S.pickerOpened = () => {
+    clearTimeout(swapTimer);
+    if (qOpen()) swapTimer = setTimeout(() => { if (qOpen() && Views.pickerOpen()) closeQueue(); }, 280);
+  };
   S.closeQueue = closeQueue;   // fitPlayer 在窗口太窄放不下详情时调用
   /* 在详情上向右滑：面板跟着手指右移，拉过面板宽度 1/4（或快速一甩）松手即收起，不够就弹回；竖向移动留给滚动 */
   {
@@ -842,6 +929,7 @@ function bindPlayer() {
       msg: `当前播放的 ${n} 首会全部移出列表（曲库里的文件不受影响）。` })) act(LMS.clear, "清除失败");
   };
   $("btn-save").onclick = saveQueue;
+  $("lcd-fav").onclick = (e) => { e.stopPropagation(); toggleFav(); };
   $("btn-qfix").onclick = () => fixQueue(queueGone());
   $("np-meta").onclick = (e) => { const b = e.target.closest("[data-folder]"); if (b) Views.openFolder(b.dataset.folder); };
   bindReorder();
@@ -1038,8 +1126,9 @@ function bindPlayer() {
 function fitPlayer() {
   const p = $("player"), tr = p.querySelector(".transport"), tl = p.querySelector(".tools"), txt = p.querySelector(".lcd-text");
   const COVER = 44, TINY_GAP = 4, TINY_PADR = 8;   // 最小状态（.tiny）的间距和右内边距，与 style.css 一致
-  const NEED_TIME = COVER + 10 + 56 + 10 + 140;   // 封面 + 间距 + 曲名至少 56 + 间距 + 时间/进度条至少 140，才显示时间组
+  const NEED_TIME = COVER + 10 + 56 + 28 + 10 + 140;   // 封面 + 间距 + 文字至少 56 + 心形（含间距）+ 间距 + 时间/进度条至少 140，才显示时间组
   const NEED_TITLE = COVER + 10 + 28;             // 封面 + 间距 + 曲名至少一个字和省略号，才显示曲名
+  const NEED_FAV = NEED_TITLE + 28;               // 再加文字右边的心形；放不下时先藏心形（.nofav），曲名留着
   /* 量之前先去掉 .tiny/.mini，按正常间距量（否则收紧间距后空间又「够了」→ 去掉 → 又不够 → 来回闪）；另留 8px 回差。
      左侧播放按钮、右侧工具按钮的宽度都不随这些状态变化，只有中间那段在变 */
   const HYS = 8;
@@ -1067,7 +1156,7 @@ function fitPlayer() {
     if (noq && open && S.closeQueue) S.closeQueue();
   };
   const fit = () => {
-    const was = { narrow: p.classList.contains("narrow"), tiny: p.classList.contains("tiny"), mini: p.classList.contains("mini") };
+    const was = { narrow: p.classList.contains("narrow"), nofav: p.classList.contains("nofav"), tiny: p.classList.contains("tiny"), mini: p.classList.contains("mini") };
     p.classList.remove("tiny", "mini");
     const cs = getComputedStyle(p);
     const inner = p.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight);
@@ -1076,11 +1165,12 @@ function fitPlayer() {
     const room = inner - trW - tlW - gap * 2;                            // 中间那段（.lcd）能分到的宽度
     const roomTiny = room + (gap - TINY_GAP) * 2 + (parseFloat(cs.paddingRight) - TINY_PADR);   // 收紧间距和右内边距后能分到的宽度
     p.classList.toggle("narrow", room < NEED_TIME + (was.narrow ? HYS : 0));
+    p.classList.toggle("nofav", room < NEED_FAV + (was.nofav ? HYS : 0));
     p.classList.toggle("tiny", room < NEED_TITLE + (was.tiny ? HYS : 0));
     p.classList.toggle("mini", roomTiny < COVER + (was.mini ? HYS : 0));
     fitQueue(cs, trW, tlW);
     /* 曲名被挤到最后一个字也显示不出（标题宽度 < 首字 + 省略号，或曲名已隐藏）时，大频谱也关掉 */
-    if (Rhythm.big && (p.classList.contains("tiny") || txt.clientWidth < oneChar())) Rhythm.setBig(false);
+    if (Rhythm.big && (p.classList.contains("tiny") || ttl.clientWidth < oneChar())) Rhythm.setBig(false);
   };
   fit();
   if (window.ResizeObserver) new ResizeObserver(fit).observe(p);

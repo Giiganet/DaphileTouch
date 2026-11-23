@@ -3,6 +3,26 @@
 All notable changes to this project are documented here.
 Versions follow [Semantic Versioning](https://semver.org/).
 
+## [0.6.3] - 2026-11-24
+
+### Added
+- **Player-bar heart** (`index.html` `#lcd-fav` after `.lcd-lines`; `app.js` `Fav`, `checkFav()`, `toggleFav()`): asks `favorites exists` (read-only) on track change and every 30 s; a tap re-checks first, then `favorites delete item_id:` or `favorites add`; if already added elsewhere it only lights up. Hidden for CD, an empty queue and tracks without a library id. `S.favChanged()` / `Views.favChanged()` keep the player bar and the library hearts in step (My Favorites reloads when open and not selecting). `fitPlayer()` gains a `nofav` level (time → heart → title → cover); `.lcd-text` min-width 84 px.
+- **Playlist file check** (`views.js` `plMarks()`, `plFix()`): the list reads each playlist's URLs (`LMS.playlistUrls`, tags:u) and checks them with the same `favCheck`; changed playlists get a grey `.pl-note` 有更新 (title gives the count). Inside, changed rows are `.pl-gone` with `td.dur.pl-tag` 已换格式 / 已删除; header **更新（N）**. `plFix()` re-checks positions and URLs, works from the highest index down: converted → `playlistAddUrl` → verify the tail → `playlistMove(tail, i+1)` → verify → `playlistDeleteTrack(i)`; missing → delete; stops on any mismatch. Tapping a changed row asks about that track only. New `LMS.playlistUrls`, `LMS.playlistAddUrl`, `LMS.playlistMove`.
+- **Play / Add pills** (`playAddBtns()`, `plBtnsNamed()`): album page and folder album page show `.pill.pill-play` **▶ 播放** and `.pill.pill-add` **＋ 加入**; the playlist page header uses the named pair. Shared `playNow(btn, name, what, load)`: `ask()` (danger when the queue is not empty), `showPicker(false)`, scroll Now Playing to the top, power on if needed, `playlistcontrol cmd:load` (album_id / folder_id / playlist_id). Playlist play goes through it too.
+- **Track thumbnails**: `trackArt(t)` and `trackTable` / `trackRow` `opt.cover` (`<td class="cv">`, 32 px) for Songs and playlist tracks; search song rows fill in covers/formats with one `LMS.trackArts(ids)` call (`titles track_id:a,b,c tags:cjo`). `songs` and `playlistTracks` request tag `o`.
+- **Format placeholders** where there is no cover (`fmtShort()` / `fmtOfTrack()`, `.ph.fmt`, `fmt-mark`): album cards (`cardFmts()` via `LMS.albumFmt`, IntersectionObserver, 4 concurrent, cached), album/folder covers, folder tracks, My Favorites, Now Playing, player bar, track info panel.
+- `S.pickerOpened()` and a shared `swapTimer` in `app.js`.
+
+### Changed
+- ☰ with the library open: the queue panel opens first (slides in, `q-in .22s`), the library closes 280 ms later; opening the library from the sidebar with the panel open closes the panel 280 ms later. The later action cancels the earlier timer.
+- Playlist page track table is `.gray-only`: `markRows()` never adds `.playing` there and marks every queued row `.queued`, including the playing one.
+- Round playlist buttons' titles are 全部播放 / 加入播放列表.
+- Folders: `＋` hidden on drives and volumes; inside volumes it is shown only after `peek()` (500 entries, `folder` tags `dcujo`) finds tracks directly in the folder.
+- Library header count `.pick-count` sits right after the title (margin `0 auto 0 2px`); album page buttons are right-aligned.
+
+### Fixed
+- None.
+
 ## [0.6.2] - 2026-11-22
 
 ### Added

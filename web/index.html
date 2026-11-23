@@ -21,7 +21,7 @@
   function later() { fit(); clearTimeout(t); t = setTimeout(fit, 350); }   // 旋转动画结束后再量一次，取最终尺寸
   fit(); addEventListener("resize", later); addEventListener("orientationchange", later); addEventListener("pageshow", later);
   if (window.visualViewport) visualViewport.addEventListener("resize", later); })();</script>
-<link rel="stylesheet" href="style.css?v=0.6.2">
+<link rel="stylesheet" href="style.css?v=0.6.3">
 </head>
 <body>
 <div class="app" id="app">
@@ -51,7 +51,7 @@
         <span class="ts-track" aria-hidden="true"><span class="ts-knob"></span></span>
         <svg class="ts-moon" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 14.6A8.2 8.2 0 0 1 9.4 4a8.2 8.2 0 1 0 10.6 10.6z"/></svg>
       </button>
-      <div class="app-ver" id="app-ver" aria-label="版本">v0.6.2</div>
+      <div class="app-ver" id="app-ver" aria-label="版本">v0.6.3</div>
     </div>
   </nav>
 
@@ -176,8 +176,13 @@
     <div class="lcd">
       <span class="lcd-cover"><img id="lcd-cover" alt="" hidden></span>
       <div class="lcd-text">
-        <div class="lcd-title" id="lcd-title">未在播放</div>
-        <div class="lcd-sub" id="lcd-sub"></div>
+        <!-- 曲名、歌手专辑两行文字的右边放心形（上下居中）：空心灰 = 未喜爱，实心红 = 已喜爱；
+             文字太长时只省略文字，心形始终露在后面 -->
+        <div class="lcd-lines">
+          <div class="lcd-title" id="lcd-title">未在播放</div>
+          <div class="lcd-sub" id="lcd-sub"></div>
+        </div>
+        <button class="fav-btn lcd-fav" id="lcd-fav" aria-label="加入喜爱" title="加入喜爱" hidden><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 20.2C6.9 16.4 3.6 13.4 3.6 9.5 3.6 7 5.5 5.1 8 5.1c1.6 0 3.1.8 4 2.1.9-1.3 2.4-2.1 4-2.1 2.5 0 4.4 1.9 4.4 4.4 0 3.9-3.3 6.9-8.4 10.7z"/></svg></button>
       </div>
       <div class="lcd-time" id="lcd-time">
         <span id="t-cur">0:00</span>
@@ -263,9 +268,9 @@
 </div>
 
 <div class="toast" id="toast" hidden></div>
-<script src="api.js?v=0.6.2"></script>
-<script src="views.js?v=0.6.2"></script>
-<script src="rhythm.js?v=0.6.2"></script>
-<script src="app.js?v=0.6.2"></script>
+<script src="api.js?v=0.6.3"></script>
+<script src="views.js?v=0.6.3"></script>
+<script src="rhythm.js?v=0.6.3"></script>
+<script src="app.js?v=0.6.3"></script>
 </body>
 </html>

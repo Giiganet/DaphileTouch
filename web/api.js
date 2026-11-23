@@ -153,14 +153,15 @@ const LMS = (() => {
     /* 资料库查询 */
     albums: (start, n, extra = []) => q(["albums", start, n, "tags:ljaySsyw", ...extra]),
     albumTracks: (albumId) => q(["titles", 0, 500, "album_id:" + albumId, "tags:acdtjJKsoTIrQye", "sort:tracknum"]),
-    songs: (start, n, extra = []) => q(["titles", start, n, "tags:acdtjlJKe", "sort:title", ...extra]),
+    songs: (start, n, extra = []) => q(["titles", start, n, "tags:acdtjlJKeo", "sort:title", ...extra]),
     artists: (start, n, extra = []) => q(["artists", start, n, ...extra]),
-    folder: (folderId) => q(["musicfolder", 0, 500, "tags:dcuj", ...(folderId ? ["folder_id:" + folderId] : [])]),
-    // 只看目录里的第一项：是曲目就说明这是专辑目录，coverid 即目录封面（LMS 扫描时已把 cover 文件关联到曲目）
+    folder: (folderId) => q(["musicfolder", 0, 500, "tags:dcujo", ...(folderId ? ["folder_id:" + folderId] : [])]),
     // 服务器状态：needsrestart / newplugins / pluginsdownloading 用来判断插件更新是否已下载、等重启安装
     serverStatus: () => q(["serverstatus", 0, 0]),
     restartServer: () => q(["restartserver"]),
-    folderPeek: (folderId) => q(["musicfolder", 0, 1, "tags:cj", "folder_id:" + folderId]),
+    // 专辑的文件格式（没封面的专辑卡片上显示）：只取第一首的 type
+    albumFmt: async (albumId) => fmtShort(((await q(["titles", 0, 1, "album_id:" + albumId, "tags:o"])).titles_loop || [{}])[0].type),
+    folderPeek: (folderId) => q(["musicfolder", 0, 500, "tags:c", "folder_id:" + folderId]),
     // 按目录路径查这个文件夹本身（return_top 返回它的 id 和名称）
     folderByUrl: (url) => q(["musicfolder", 0, 1, "tags:u", "url:" + url, "return_top:1"]),
     // 单曲详情：songinfo 返回 [{id},{title},…] 一键一项，这里合并成一个对象（专辑名、艺人、年份、album_id、格式）
@@ -174,7 +175,13 @@ const LMS = (() => {
     /* 从已保存的播放列表里删一首（index 从 0 起；删后后面的位置往前挪） */
     playlistDeleteTrack: (plId, index) => q(["playlists", "edit", "cmd:delete", "playlist_id:" + plId, "index:" + index]),
     // 带上当前设备查询：列表里有网络流（电台 http/m3u8）时，LMS 不带设备会直接断开连接（浏览器报 502 / 网络错误）
-    playlistTracks: (plId) => rpc(playerId || 0, ["playlists", "tracks", 0, 500, "playlist_id:" + plId, "tags:acdtjJKl"]),
+    playlistTracks: (plId) => rpc(playerId || 0, ["playlists", "tracks", 0, 500, "playlist_id:" + plId, "tags:acdtjJKlou"]),
+    /* 只取地址（核对文件还在不在、更新前后核对用） */
+    playlistUrls: (plId) => rpc(playerId || 0, ["playlists", "tracks", 0, 500, "playlist_id:" + plId, "tags:u"]),
+    /* 往已保存的播放列表末尾加一个文件（url 要用 LMS 自己的写法；列表里已有同一首时 LMS 不加）。不带 title，免得改掉曲目名 */
+    playlistAddUrl: (plId, url) => q(["playlists", "edit", "cmd:add", "playlist_id:" + plId, "url:" + url]),
+    /* 把第 from 首挪到第 to 的位置（从 0 起） */
+    playlistMove: (plId, from, to) => q(["playlists", "edit", "cmd:move", "playlist_id:" + plId, "index:" + from, "toindex:" + to]),
     favorites: (itemId) => q(["favorites", "items", 0, 200, "want_url:1", ...(itemId ? ["item_id:" + itemId] : [])]),
     /* 喜爱（LMS 收藏夹）：exists 可直接用曲目 id，返回 {exists, index}；删除用 index，加入要文件 url */
     favExists: (trackId) => q(["favorites", "exists", String(trackId)]),
@@ -194,6 +201,8 @@ const LMS = (() => {
     fileInfo: async (trackId) => ({ id: trackId, ...(((await q(["titles", 0, 1, "track_id:" + trackId, "tags:uofrdT"])).titles_loop || [])[0] || {}) }),
     trackUrl: async (trackId) => ((await q(["titles", 0, 1, "track_id:" + trackId, "tags:u"])).titles_loop || [])[0] || {},
     search: (term) => q(["search", 0, 30, "term:" + term]),
+    /* 一批曲目的封面和格式（搜索结果的缩略图用；只读） */
+    trackArts: (ids) => q(["titles", 0, ids.length, "track_id:" + ids.join(","), "tags:cjo"]),
 
     /* ---------- CD（靠 LMS 的 CDplayer 插件：读盘、查曲名、cdplay:// 播放都在插件里） ---------- */
     /* 插件在不在：can 是只读查询，在 = 1 */

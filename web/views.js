@@ -7,8 +7,10 @@ const Views = (() => {
   let pager = null;          // 当前分页加载器
   let filterTimer = null;
 
-  const art = (id, size = 300) => id ? `<img class="art" src="${LMS.cover(id, size)}" alt="" loading="lazy">` : `<div class="art"></div>`;
-  const thumb = (id) => id ? `<img class="thumb" src="${LMS.cover(id, 100)}" alt="" loading="lazy">` : `<div class="thumb"></div>`;
+  const art = (id, size = 300, fmt = "") => id ? `<img class="art" src="${LMS.cover(id, size)}" alt="" loading="lazy">`
+    : `<div class="art${fmt ? " fmt-ph" : ""}">${esc(fmt)}</div>`;   // 没有封面：方块里写文件格式
+  const thumb = (id, fmt) => id ? `<img class="thumb" src="${LMS.cover(id, 100)}" alt="" loading="lazy">`
+    : `<div class="thumb${fmt ? " fmt-ph" : ""}">${esc(fmt || "")}</div>`;   // 没有封面：方块里写文件格式
   /* 详情标题行：既没有返回箭头、也没有标题时整行隐藏（如搜索页） */
   function syncHead() {
     const back = document.getElementById("btn-back");
@@ -63,7 +65,7 @@ const Views = (() => {
   }
 
   /* ---------- 分页：滚动到底部自动加载下一页（root 为滚动容器，默认右栏） ---------- */
-  function paged(fetchPage, renderItems, container, countLabel, root = content()) {
+  function paged(fetchPage, renderItems, container, countLabel, root = content(), after = null) {
     let start = 0, total = Infinity, busy = false, dead = false;
     const sentinel = document.createElement("div");
     sentinel.className = "more-sentinel";
@@ -79,6 +81,7 @@ const Views = (() => {
         if (countLabel) countLabel(total);
         const html = renderItems(r, start);
         container.insertAdjacentHTML("beforeend", html);
+        if (after) after(container);
         markRows(S.cur);   // 新加载的一页也标出正在播放、已加入的曲目
         start += PAGE;
         if (!total) container.outerHTML = empty("没有内容");
@@ -102,13 +105,44 @@ const Views = (() => {
     reset(`<div class="grid" id="grid"></div>`);
     setTitle(title);
     const grid = document.getElementById("grid");
-    pager = paged((s, n) => LMS.albums(s, n, extra), (r) => (r.albums_loop || []).map((a) => `
+    const fmts = cardFmts();
+    const pg = paged((s, n) => LMS.albums(s, n, extra), (r) => (r.albums_loop || []).map((a) => `
       <button class="card" data-album="${a.id}">
-        ${art(a.artwork_track_id)}
+        ${a.artwork_track_id ? art(a.artwork_track_id) : `<div class="art fmt-ph" data-fmtalbum="${a.id}"></div>`}
         <div class="t1">${esc(a.album)}</div><div class="t2">${esc(a.artist || "")}</div>
       </button>`).join(""), grid,
-      (n) => (title ? setTitle(title, n, "张") : setCount(n)));
+      (n) => (title ? setTitle(title, n, "张") : setCount(n)), content(), (box) => fmts.watch(box));
+    pager = { stop: () => { pg.stop(); fmts.stop(); } };
     grid.onclick = (e) => { const c = e.target.closest("[data-album]"); if (c) open("album", c.dataset.album); };
+  }
+
+  /* 没有封面的专辑卡片：滚动到眼前时取第一首的格式写进方块（最多 4 个并发；结果记住，下次不再问） */
+  const fmtCache = new Map();   // album_id -> "FLAC"
+  function cardFmts() {
+    const queue = [];
+    let running = 0, stopped = false;
+    const paint = (el, f) => { el.textContent = f; };
+    const pump = () => {
+      while (!stopped && running < 4 && queue.length) {
+        const el = queue.shift(), id = el.dataset.fmtalbum;
+        running++;
+        LMS.albumFmt(id).then((f) => { fmtCache.set(id, f); if (!stopped) paint(el, f); })
+          .catch(() => {}).finally(() => { running--; pump(); });
+      }
+    };
+    const io = new IntersectionObserver((es) => {
+      es.forEach((e) => {
+        if (!e.isIntersecting) return;
+        io.unobserve(e.target);
+        const id = e.target.dataset.fmtalbum;
+        if (fmtCache.has(id)) paint(e.target, fmtCache.get(id)); else queue.push(e.target);
+      });
+      pump();
+    }, { root: content(), rootMargin: "300px" });
+    return {
+      watch: (box) => box.querySelectorAll("[data-fmtalbum]:not([data-w])").forEach((el) => { el.dataset.w = "1"; io.observe(el); }),
+      stop: () => { stopped = true; io.disconnect(); },
+    };
   }
 
   /* ---------- 专辑详情 ---------- */
@@ -122,17 +156,19 @@ const Views = (() => {
     setTitle(a.album || "专辑");
     content().innerHTML = `
       <div class="album-head">
-        ${art(coverId, 300)}
+        ${art(coverId, 300, fmtShort((tracks[0] || {}).type))}
         <div style="min-width:0">
           <h2>${esc(a.album || "未知专辑")}</h2>
           <div class="artist">${esc(a.artist || "未知艺人")}</div>
           <div class="meta">${[a.year && a.year !== 0 ? a.year : "", tracks.length + " 首", fmtTime(totalSec)].filter(Boolean).join(" · ")}</div>
           ${fmtChips(tracks[0])}
-          ${tracks.length ? selectAllBtn(`<button class="pill" data-addall>＋ 全部播放</button>`) : ""}
+          ${tracks.length ? playAddBtns() : ""}
         </div>
       </div>
       ${trackTable(tracks, { num: true })}`;
     bindTracks((e) => {
+      const pb = e.target.closest("[data-playall]");
+      if (pb) return playNow(pb, a.album || "这张专辑", "这张专辑", () => LMS.loadAlbum(albumId, "load"));
       if (e.target.closest("[data-addall]")) {
         addOnce(e.target.closest("[data-addall]"), async () => { await LMS.loadAlbum(albumId, "add"); toast(`已把整张专辑（${tracks.length} 首）加到当前播放末尾`); });
       }
@@ -140,11 +176,16 @@ const Views = (() => {
     markRows(S.cur);
   }
 
-  /* 详情页顶部的整体操作按钮（如「＋ 全部播放」） */
+  /* 详情页顶部的整体操作按钮：黑色「▶ 播放」+ 灰色「＋ 加入」（专辑页、专辑目录；播放列表的标题行也用这两个，见 plBtnsNamed）。
+     「播放」= 清空当前播放换成这一组并从第一首开始放（先问）；「加入」= 加到当前播放末尾、不自动播放。
+     播放列表一览每行是它们的简化圆钮（鼠标停留提示「全部播放」「加入播放列表」） */
   const selectAllBtn = (extra = "") => extra ? `<div class="actions">${extra}</div>` : "";
+  const playAddBtns = (pa = "data-playall", aa = "data-addall") => selectAllBtn(
+    `<button class="pill pill-play" ${pa}>${PLAY}播放</button><button class="pill pill-add" ${aa}>${PLUS}加入</button>`);
 
   /* 行尾的「＋」：点一下把这一首（或这一项）加到当前播放末尾 */
   const PLUS = `<svg viewBox="0 0 16 16" width="12" height="12" aria-hidden="true"><path d="M8 2.5v11M2.5 8h11" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"/></svg>`;
+  const PLAY = `<svg viewBox="0 0 16 16" width="11" height="11" aria-hidden="true"><path d="M5.5 3.3v9.4L13 8z" fill="currentColor" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/></svg>`;
   const CHECK = `<svg viewBox="0 0 16 16" width="12" height="12" aria-hidden="true"><path d="M3 8.5l3.2 3.2L13 4.8" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
   const plusBtn = (attr) => `<button class="add-btn" ${attr} aria-label="加入当前播放">${PLUS}</button>`;
   /* 加入成功后「＋」短暂变成蓝色「✓」 */
@@ -195,18 +236,22 @@ const Views = (() => {
       await LMS.favAdd(t.url, t.title || row.dataset.title || "");
       btn.classList.add("on");
       toast(`已加入喜爱：${row.dataset.title || t.title || ""}`);
-    }, "加入喜爱失败")).finally(() => { btn.disabled = false; });
+    }, "加入喜爱失败")).finally(() => { btn.disabled = false; if (S.favChanged) S.favChanged(); });   // 播放条的心形跟着刷新
   }
 
   /* 歌曲表格：点整行加入当前播放；最右一列是心形 */
   function trackTable(tracks, opt = {}) {
     if (!tracks.length) return empty("没有歌曲");
-    return `<table class="tracks"><thead><tr>
-      ${opt.num ? `<th class="num">#</th>` : ""}<th>标题</th><th class="dur">时长</th><th class="fav"></th>
+    return `<table class="tracks${opt.grayOnly ? " gray-only" : ""}"><thead><tr>
+      ${opt.num ? `<th class="num">#</th>` : ""}${opt.cover ? `<th class="cv"></th>` : ""}<th>标题</th><th class="dur">时长</th><th class="fav"></th>
     </tr></thead><tbody>${tracks.map((t, i) => trackRow(t, i, opt)).join("")}</tbody></table>`;
   }
+  /* 单曲行首的缩略图：有封面显示封面，没有写文件格式（专辑页、专辑目录顶上已有大封面，不加） */
+  const trackArt = (t) => Number(t.coverart) !== 0 && (t.coverid || t.artwork_track_id)
+    ? `<img src="${LMS.cover(t.coverid || t.artwork_track_id, 100)}" alt="" loading="lazy">`
+    : (() => { const f = fmtShort(t.type || (t.url ? extOf(fileOf(t.url)) : "")); return `<span class="ph${f ? " fmt" : ""}">${esc(f)}</span>`; })();
   const trackRow = (t, i, opt) => `<tr data-i="${i}" data-id="${t.id}" data-title="${esc(t.title)}">
-      ${opt.num ? `<td class="num">${esc(t.tracknum || i + 1)}</td>` : ""}
+      ${opt.num ? `<td class="num">${esc(t.tracknum || i + 1)}</td>` : ""}${opt.cover ? `<td class="cv">${trackArt(t)}</td>` : ""}
       <td class="ttl">${esc(t.title)}${opt.artist ? `<div class="sub">${esc([t.artist, t.album].filter(Boolean).join(" — "))}</div>` : ""}</td>
       <td class="dur">${t.duration ? fmtTime(t.duration) : ""}</td>
       <td class="fav">${favBtn()}</td></tr>`;
@@ -244,10 +289,10 @@ const Views = (() => {
 
   /* ---------- 歌曲（全部，分页） ---------- */
   function songs(extra = []) {
-    reset(`<table class="tracks"><thead><tr><th>标题</th><th class="dur">时长</th><th class="fav"></th></tr></thead><tbody id="tb"></tbody></table>`);
+    reset(`<table class="tracks"><thead><tr><th class="cv"></th><th>标题</th><th class="dur">时长</th><th class="fav"></th></tr></thead><tbody id="tb"></tbody></table>`);
     setTitle("");   // 顶部已有「歌曲」
     const tb = document.getElementById("tb");
-    pager = paged((s, n) => LMS.songs(s, n, extra), (r, s) => (r.titles_loop || []).map((t, i) => trackRow(t, s + i, { artist: true })).join(""),
+    pager = paged((s, n) => LMS.songs(s, n, extra), (r, s) => (r.titles_loop || []).map((t, i) => trackRow(t, s + i, { artist: true, cover: true })).join(""),
       tb, (n) => setCount(n));
     bindTracks();
   }
@@ -260,9 +305,9 @@ const Views = (() => {
     const single = (it) => !it.track && it.add && !it.more;
     reset(items.length ? `<ul class="list" id="ls">${items.map((it, i) => `
       <li data-i="${i}"${it.track ? ` data-id="${it.id}" data-title="${esc(it.name)}"` : ""}>
-        ${it.lead || (it.thumb !== undefined ? thumb(it.thumb) : "")}
+        ${it.lead || (it.thumb !== undefined ? thumb(it.thumb, it.fmt) : "")}
         <div class="grow">${esc(it.name)}${it.sub ? `<div class="sub">${esc(it.sub)}</div>` : ""}</div>
-        ${it.track ? favBtn() : it.add && it.more ? plusBtn(`data-add="${i}"`) : ""}
+        ${it.track ? favBtn() : it.add && it.more ? plusBtn(`data-add="${i}"${it.addHidden ? " hidden" : ""}`) : ""}
         ${it.more ? `<span style="color:var(--text3)">›</span>` : ""}
       </li>`).join("")}</ul>` : empty("没有内容"));
     // title 为空：分类首页（文件夹、收藏），数量放窗口顶部；否则是子目录，数量放详情标题行
@@ -315,18 +360,21 @@ const Views = (() => {
   const svgOf = (k) => `<svg class="row-ico" viewBox="0 0 24 24" aria-hidden="true">${ICO[k]}</svg>`;
   const lead = (k, probe) => `<span class="lead lead-${k}"${probe ? ` data-probe="${probe}"` : ""}>${svgOf(k)}</span>`;
 
-  /* 普通目录滚动到眼前时，看它的第一项：是曲目就是专辑目录 → 换成光盘图标，封面加载成功再换成封面 */
+  /* 普通目录滚动到眼前时读一下它的内容：里面直接有曲目就是专辑目录（最后一级）→ 换成光盘图标、露出行尾「＋」，
+     封面加载成功再换成封面。LMS 不保证目录在前、曲目在后（实测有「曲目…目录…曲目」），所以要看全部，不能只看第一项 */
   const peekCache = new Map();   // folder_id -> { album, cover }
   async function peek(id) {
     if (peekCache.has(id)) return peekCache.get(id);
     const r = await LMS.folderPeek(id);
-    const f = (r.folder_loop || [])[0];
-    const p = f && f.type === "track" ? { album: true, cover: f.coverid || "" } : { album: false };
+    const ts = (r.folder_loop || []).filter((f) => f.type === "track");
+    const p = ts.length ? { album: true, cover: (ts.find((f) => f.coverid) || {}).coverid || "" } : { album: false };
     peekCache.set(id, p);
     return p;
   }
   function paintLead(el, p) {
     if (!p.album) return;
+    const plus = el.parentNode && el.parentNode.querySelector(".add-btn[hidden]");
+    if (plus) plus.hidden = false;
     el.className = "lead lead-disc";
     el.innerHTML = svgOf("disc");
     if (!p.cover) return;
@@ -354,7 +402,7 @@ const Views = (() => {
     return { stop: () => { stopped = true; io.disconnect(); } };
   }
 
-  /* ---------- 专辑目录（目录里直接有曲目）：顶部封面 + 专辑信息 + 「＋ 全部播放」，下面是曲目表 ---------- */
+  /* ---------- 专辑目录（目录里直接有曲目）：顶部封面 + 专辑信息 + 「▶ 播放」「＋ 加入」，下面是曲目表 ---------- */
   const FMT = { flc: "FLAC", wav: "WAV", aif: "AIFF", alc: "ALAC", mp3: "MP3", aac: "AAC", mp4: "AAC", ogg: "Ogg",
     ops: "Opus", dsf: "DSD", dff: "DSD", wvp: "WavPack", ape: "APE", wma: "WMA" };
   const secOf = (d) => typeof d === "number" ? d : String(d || "").split(":").reduce((s, x) => s * 60 + Number(x || 0), 0);
@@ -391,13 +439,13 @@ const Views = (() => {
     setTitle(name || info.album || "", tracks.length, "首");
     content().innerHTML = `
       <div class="album-head">
-        ${art(cover, 300)}
+        ${art(cover, 300, fmtShort(info.type || (files[0] && extOf(files[0].filename))))}
         <div style="min-width:0">
           <h2>${esc(albumName || "未知专辑")}</h2>
           <div class="artist">${esc(artistName || "未知艺人")}</div>
           <div class="meta">${esc(meta)}</div>
           ${fmtChips(info)}
-          ${selectAllBtn(`<button class="pill" data-addall>＋ 全部播放</button>`)}
+          ${playAddBtns()}
         </div>
       </div>
       ${trackTable(tracks, { num: true })}
@@ -406,9 +454,11 @@ const Views = (() => {
         return `<li data-o="${i}">
           ${lead(dir ? "folder" : f.type === "playlist" ? "playlist" : "other", dir ? f.id : "")}
           <div class="grow">${esc(f.filename)}</div>
-          ${dir ? plusBtn(`data-add="${i}"`) + `<span style="color:var(--text3)">›</span>` : ""}
+          ${dir ? plusBtn(`data-add="${i}" hidden`) + `<span style="color:var(--text3)">›</span>` : ""}
         </li>`; }).join("")}</ul>` : ""}`;
     bindTracks((e) => {
+      const pb = e.target.closest("[data-playall]");
+      if (pb) return playNow(pb, albumName || name || "这个文件夹", "这个文件夹", () => LMS.loadFolder(folderId, "load"));
       if (e.target.closest("[data-addall]")) {
         return addOnce(e.target.closest("[data-addall]"), async () => { await LMS.loadFolder(folderId, "add"); toast(`已把整张专辑（${tracks.length} 首）加到当前播放末尾`); });
       }
@@ -444,10 +494,13 @@ const Views = (() => {
         // 曲目去掉扩展名；musicfolder 给的时长是「6:40」这样的文字，要先换成秒
         name: f.type === "track" ? f.filename.replace(/\.[^.]+$/, "") : f.filename,
         id: f.id, type: f.type, more: isDir, net: isNet,
-        lead: lead(kind, isDir && !sys ? f.id : ""),
+        // 曲目：有封面显示封面，没有封面写文件格式（ct 是 LMS 的格式代号，如 flc、mp3）
+        lead: f.type === "track" ? (f.coverid ? `<span class="lead"><img src="${LMS.cover(f.coverid, 100)}" alt="" loading="lazy"></span>`
+          : `<span class="lead lead-fmt">${esc(fmtShort(f.ct || extOf(f.filename)))}</span>`) : lead(kind, isDir && !sys ? f.id : ""),
         sub: f.type === "track" && secOf(f.duration) ? fmtTime(secOf(f.duration)) : "",
         track: f.type === "track",
         add: isDir && !sys ? () => LMS.loadFolder(f.id, "add") : null,
+        addHidden: isDir && !sys,   // 「＋」只给最后一级（直接放着曲目的）目录：先藏起来，probeFolders 看过里面有曲目才露出
       };
     });
     list(name || "", items, (f) => {
@@ -524,10 +577,12 @@ const Views = (() => {
      「播放」：清空当前播放、换成这个列表并从第一首开始放（先弹窗提示会清掉当前播放里的曲目）；
      确定播放后关闭选曲窗口，回到「当前播放」。「加入」：加到当前播放末尾，不自动播放，窗口不关。点行的其他地方进入列表看曲目，标题行同样有这两个键。 */
   // 和其他页面一致的圆钮：「播放」深灰圆 + 白三角，「加入」灰圆 + 「＋」（同专辑、目录行的加入键）
-  const PLAY = `<svg viewBox="0 0 16 16" width="11" height="11" aria-hidden="true"><path d="M5.5 3.3v9.4L13 8z" fill="currentColor" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/></svg>`;
   const plBtns = (id, name) => `<span class="pl-acts" data-plid="${esc(id)}" data-plname="${esc(name)}">
-      <button class="add-btn pl-play" data-plplay aria-label="播放这个播放列表" title="播放">${PLAY}</button>
-      <button class="add-btn" data-pladd aria-label="加入当前播放" title="加入当前播放">${PLUS}</button></span>`;
+      <button class="add-btn pl-play" data-plplay aria-label="全部播放" title="全部播放">${PLAY}</button>
+      <button class="add-btn" data-pladd aria-label="加入播放列表" title="加入播放列表">${PLUS}</button></span>`;
+  // 进入播放列表后标题行右边：同样两个键的带名称版（同专辑页）
+  const plBtnsNamed = (id, name) => `<span class="pl-acts named" data-plid="${esc(id)}" data-plname="${esc(name)}">
+      <button class="pill pill-play" data-plplay>${PLAY}播放</button><button class="pill pill-add" data-pladd>${PLUS}加入</button></span>`;
   async function plAct(e) {
     const b = e.target.closest("[data-pladd], [data-plplay]");
     if (!b || b.disabled || b.dataset.busy) return !!b;
@@ -536,25 +591,31 @@ const Views = (() => {
     const busy = (on, self = true) => box.querySelectorAll("button").forEach((x) => { if (x !== b || self) x.disabled = on; });
     if (b.hasAttribute("data-pladd")) {
       busy(true, false);
-      await addOnce(b, async () => { await LMS.loadPlaylist(id, "add"); toast(`已把「${name}」加到当前播放末尾`); flashDone(b); });
+      await addOnce(b, async () => { await LMS.loadPlaylist(id, "add"); toast(`已把「${name}」加到当前播放末尾`); if (!b.classList.contains("pill")) flashDone(b); });
       busy(false);
     } else {
-      const n = (S.st && Number(S.st.playlist_tracks)) || 0;
-      if (!await ask({ title: `播放「${name}」？`,
-        msg: n ? `当前播放列表里的 ${n} 首曲目会被清除，换成这个播放列表，并从第一首开始播放。` : "将把这个播放列表放进当前播放，并从第一首开始播放。",
-        ok: "播放", danger: !!n })) return true;
-      // 确定后关掉选曲窗口，回到「当前播放」看新换上的列表（滚回顶部，从第一首看起）
-      showPicker(false);
-      const cl = document.getElementById("cur-list"); if (cl) cl.scrollTop = 0;
-      busy(true);
-      await act(async () => {
-        if (S.st && Number(S.st.power) !== 1) await LMS.power(1);
-        await LMS.loadPlaylist(id, "load");
-        toast(`正在播放「${name}」`);
-      }, "播放失败");
-      busy(false);
+      await playNow(b, name, "这个播放列表", () => LMS.loadPlaylist(id, "load"), busy);
     }
     return true;
+  }
+  /* 「播放」：先问（会清掉当前播放里的曲目），确定后关掉选曲窗口回到「当前播放」（滚回顶部，从第一首看起），
+     换成这一组并从第一首开始放。专辑页、专辑目录、播放列表共用 */
+  async function playNow(b, name, what, load, busy) {
+    if (!b || b.disabled || b.dataset.busy) return;
+    const n = (S.st && Number(S.st.playlist_tracks)) || 0;
+    if (!await ask({ title: `播放「${name}」？`,
+      msg: n ? `当前播放列表里的 ${n} 首曲目会被清除，换成${what}，并从第一首开始播放。` : `将把${what}放进当前播放，并从第一首开始播放。`,
+      ok: "播放", danger: !!n })) return;
+    showPicker(false);
+    const cl = document.getElementById("cur-list"); if (cl) cl.scrollTop = 0;
+    const lock = busy || ((on) => { b.disabled = on; });
+    lock(true);
+    await act(async () => {
+      if (S.st && Number(S.st.power) !== 1) await LMS.power(1);
+      await load();
+      toast(`正在播放「${name}」`);
+    }, "播放失败");
+    lock(false);
   }
 
   async function playlists() {
@@ -568,6 +629,7 @@ const Views = (() => {
     setCount(pls.length);
     reset(pls.length ? `<ul class="list pl-list" id="pl">${items.map((p, i) => `
       <li data-i="${i}" data-k="${esc(p.id)}" data-name="${esc(p.name)}">${lead("playlist")}<div class="grow">${esc(p.name)}</div>${plBtns(p.id, p.name)}</li>`).join("")}</ul>` : empty("没有播放列表"));
+    plMarks(items, me);   // 不等它：列表先显示，核对完再在名称后面补标记
     content().onclick = async (e) => {
       if (await plAct(e)) return;
       const li = e.target.closest("li[data-k]");
@@ -593,19 +655,35 @@ const Views = (() => {
   async function playlistDetail(arg) {
     const { id, name } = arg;
     reset(empty("加载中…"));
-    const me = current;
+    const me = current, mine = () => current === me;
     const r = await LMS.playlistTracks(id);
     if (current !== me) return;
     const tracks = r.playlisttracks_loop || [];
-    reset(tracks.length ? trackTable(tracks, { artist: true }) : empty("这个播放列表是空的"));
+    // 文件已不在的曲目，LMS 给的标题是空的：用文件名（去掉扩展名）顶上，不然这一行是空白
+    tracks.forEach((t) => { if (!t.title && t.url) t.title = stem(splitPath(fileOf(t.url))[1] || ""); });
+    reset(tracks.length ? trackTable(tracks, { artist: true, grayOnly: true, cover: true }) : empty("这个播放列表是空的"));
     setTitle(name, tracks.length, "首");
     const act0 = document.getElementById("view-act");
-    act0.innerHTML = plBtns(id, name);
+    act0.innerHTML = plBtnsNamed(id, name);
     act0.onclick = (e) => plAct(e);
     syncHead();
     bindTracks(() => {});
-    const items = tracks.map((t, i) => ({ i, id: String(t.id), name: t.title || "" }));
-    selDelete({
+    const items = tracks.map((t, i) => ({ i, id: String(t.id), name: t.title || "", url: t.url || "" }));
+    const reload = () => go("playlist", arg);
+    const goneOf = () => items.filter((it) => it.gone);
+    const fix = async (picks) => {
+      if (!picks.length || !await plFixAsk(name, picks) || !mine()) return;
+      try { toast(await plFix(id, picks)); } catch (e) { toast("更新失败：" + e.message); }
+      if (mine()) reload();
+    };
+    // 文件有变动的行：点它只问这一首怎么处理（不加入当前播放，放不出来）；其余点击照旧
+    const base = content().onclick;
+    content().onclick = (e) => {
+      const tr = e.target.closest("tr.pl-gone");
+      if (tr && !e.target.closest("[data-fav]")) return fix([items[tr.dataset.i]]);
+      return base && base(e);
+    };
+    const draw = selDelete({
       items, el: content().querySelector(".tracks"), rowSel: "tbody tr[data-i]",
       ask: (picks, all) => ({ title: "从播放列表删除？",
         msg: `将把${whatOf(picks, all, "首")}从「${name}」里删除${all ? "，这个播放列表会变成空的（列表本身保留）" : ""}。只是移出这个播放列表，不会删除音乐文件；当前播放不受影响。`,
@@ -617,8 +695,85 @@ const Views = (() => {
         return picks.length;
       },
       done: (n) => `已从「${name}」删除 ${n} 首`,
-      reload: () => go("playlist", arg),
+      reload,
+      tools: () => (goneOf().length ? `<button class="pill fav-b fav-fix" data-favtool>更新（${goneOf().length}）</button>` : ""),
+      tool: () => fix(goneOf()),
     });
+    // 曲目先显示出来，再到磁盘上核对（同「我的喜爱」）；有变动的行整行变灰，右边（时长那一格）标「已删除」
+    // （换了格式的标「已换格式」），标题栏出「更新（N）」
+    if (!(await favCheck(items)) || !mine()) return;
+    const tb = content().querySelector(".tracks");
+    items.forEach((it) => {
+      const tr = it.gone && tb && tb.querySelector(`tbody tr[data-i="${it.i}"]`);
+      if (!tr) return;
+      tr.classList.add("pl-gone");
+      const sub = tr.querySelector("td.ttl .sub");
+      if (sub && !sub.textContent.trim()) sub.remove();
+      const dur = tr.querySelector("td.dur");
+      if (dur) { dur.textContent = it.gone.twin ? "已换格式" : "已删除"; dur.classList.add("pl-tag"); }
+      if (it.gone.twin) tr.title = `已换成 ${it.gone.twin}`;
+    });
+    draw();
+  }
+
+  /* ---------- 播放列表里的文件有变动（被删除、换了格式）----------
+     LMS 的播放列表只记文件地址，文件变了不会跟着变：换格式的那首在列表里标题变空、放不出来。
+     播放列表一览：每个列表核对一遍，有变动的在这一行右边（按钮前）标灰色「有更新」；进到列表里再点「更新（N）」处理：
+     - 换了格式（同一文件夹里有同名的新格式文件）：原位换成新文件——先加到列表末尾，再挪到旧的后面，然后删掉旧的；
+       新文件已经在这个列表里时（LMS 不会重复加），只删旧的；
+     - 文件已不在：从这个播放列表里移除。
+     从后往前做，动手前再读一次列表核对位置和地址；不会删除任何音乐文件，当前播放也不受影响。 */
+  async function plMarks(items, me) {
+    try {
+      const all = [];
+      for (const p of items) {
+        const r = await LMS.playlistUrls(p.id).catch(() => null);
+        if (current !== me) return;
+        ((r && r.playlisttracks_loop) || []).forEach((t) => all.push({ pl: p.id, url: t.url || "" }));
+      }
+      if (!(await favCheck(all)) || current !== me) return;
+      const ul = document.getElementById("pl");
+      items.forEach((p, i) => {
+        const n = all.filter((t) => t.pl === p.id && t.gone).length;
+        const g = n && ul && ul.querySelector(`li[data-i="${i}"] .grow`);
+        if (g && !g.parentNode.querySelector(".pl-note")) g.insertAdjacentHTML("afterend", `<span class="pl-note" title="${n} 首需要更新">有更新</span>`);
+      });
+    } catch (_) { /* 核对失败不影响使用，什么都不标 */ }
+  }
+  function plFixAsk(name, picks) {
+    const one = picks.length === 1 ? picks[0] : null;
+    if (one && !one.gone.twin) return ask({ title: "曲目已删除", icon: "trash", danger: true, ok: "移除",
+      msg: `「${one.name}」在原来的位置找不到了，可能被删除、改名或移动过，放不出来。\n从「${name}」里移除这一首？（不会删除任何音乐文件）` });
+    const tw = picks.filter((p) => p.gone.twin).length, del = picks.length - tw;
+    return ask({ title: `更新「${name}」？`, ok: "更新", icon: del && !tw ? "trash" : "", danger: !tw,
+      msg: one ? `「${one.gone.name}」已不在，同一文件夹里有「${one.gone.twin}」。\n换成新文件？位置不变。`
+        : [tw ? `${tw} 首换成同一文件夹里的新格式文件（位置不变）` : "", del ? `${del} 首文件已不在，从这个播放列表移除` : ""].filter(Boolean).join("；") + "。\n不会删除任何音乐文件，当前播放不受影响。" });
+  }
+  async function plFix(id, picks) {
+    const urls = async () => ((await LMS.playlistUrls(id)).playlisttracks_loop || []).map((t) => t.url || "");
+    const now = await urls();
+    if (picks.some((p) => now[p.i] !== p.url)) throw new Error("播放列表刚刚有变化，请重新打开");
+    let rep = 0, rm = 0, miss = 0;
+    for (const p of [...picks].sort((a, b) => b.i - a.i)) {
+      let cur = await urls();
+      if (cur[p.i] !== p.url) throw new Error("播放列表刚刚有变化，请重新打开");
+      if (p.gone.twin) {
+        const dirUrl = p.url.slice(0, p.url.lastIndexOf("/"));
+        const hit = ((await LMS.folderFiles(dirUrl)).folder_loop || []).find((x) => x.url && fileOf(x.url).endsWith("/" + p.gone.twin));
+        if (!hit) { miss++; continue; }      // 新文件还没进曲库：先不动
+        if (!cur.includes(hit.url)) {
+          await LMS.playlistAddUrl(id, hit.url);
+          const after = await urls();
+          if (after.length !== cur.length + 1 || after[after.length - 1] !== hit.url) throw new Error("播放列表刚刚有变化，请重新打开");
+          await LMS.playlistMove(id, after.length - 1, p.i + 1);   // 挪到旧的后面
+          cur = await urls();
+          if (cur[p.i] !== p.url || cur[p.i + 1] !== hit.url) throw new Error("播放列表刚刚有变化，请重新打开");
+        }
+        await LMS.playlistDeleteTrack(id, p.i);
+        rep++;
+      } else { await LMS.playlistDeleteTrack(id, p.i); rm++; }
+    }
+    return [rep ? `已换成新文件 ${rep} 首` : "", rm ? `已移除 ${rm} 首` : "", miss ? `${miss} 首的新文件还没进曲库，稍后再试` : ""].filter(Boolean).join("，") || "没有可更新的曲目";
   }
 
   /* 我的喜爱。删除不用左滑（和「向左滑关闭窗口」抢手势），用窗口标题栏的「删除」（见 selDelete）。
@@ -630,6 +785,7 @@ const Views = (() => {
     const map = new Map(now.map((f) => [favKey(f), f]));
     if (picks.some((p) => { const f = map.get(p.key); return !f || f.name !== p.name || (f.url || "") !== p.url; })) throw new Error("喜爱列表刚刚有变化，请重新选择");
     for (const p of [...picks].sort((a, b) => favLast(b.key) - favLast(a.key))) await LMS.favDelete(p.key);
+    if (S.favChanged) S.favChanged();
     return picks.length;
   }
   /* 喜爱核对：LMS 的喜爱只记文件路径，文件被删、改名、换格式后，这一项就放不出来了。
@@ -703,6 +859,7 @@ const Views = (() => {
       } else await LMS.favDelete(p.key);
       n++;
     }
+    if (S.favChanged) S.favChanged();
     return n;
   }
   async function favorites(arg) {
@@ -715,7 +872,7 @@ const Views = (() => {
       const dir = Number(f.hasitems) > 0;
       return {
         name: f.name, id: f.id, more: dir, key: favKey(f), url: f.url || "",
-        ...(dir ? { lead: lead("folder") } : { thumb: coverFromImage(f.image) }),
+        ...(dir ? { lead: lead("folder") } : { thumb: coverFromImage(f.image), fmt: fmtShort(extOf(fileOf(f.url || ""))) }),
         add: Number(f.isaudio) ? () => LMS.addFavorite(f.id) : null,
       };
     });
@@ -774,7 +931,7 @@ const Views = (() => {
     content().innerHTML = `
       ${ar.length ? `<div class="section-h">艺人</div><ul class="list">${ar.map((a) => `<li data-artist="${a.contributor_id}" data-name="${esc(a.contributor)}">${lead("artist")}<div class="grow">${esc(a.contributor)}</div><span style="color:var(--text3)">›</span></li>`).join("")}</ul>` : ""}
       ${al.length ? `<div class="section-h">专辑</div><ul class="list">${al.map((a) => `<li data-album="${a.album_id}" data-name="${esc(a.album)}">${lead("disc")}<div class="grow">${esc(a.album)}</div>${plusBtn(`data-add="${a.album_id}"`)}<span style="color:var(--text3)">›</span></li>`).join("")}</ul>` : ""}
-      ${tr.length ? `<div class="section-h">歌曲</div><ul class="list">${tr.map((t) => `<li data-id="${t.track_id}" data-title="${esc(t.track)}">${lead("song")}<div class="grow">${esc(t.track)}</div>${favBtn()}</li>`).join("")}</ul>` : ""}`;
+      ${tr.length ? `<div class="section-h">歌曲</div><ul class="list">${tr.map((t) => `<li data-id="${t.track_id}" data-title="${esc(t.track)}"><span class="lead lead-fmt" data-art="${t.track_id}"></span><div class="grow">${esc(t.track)}</div>${favBtn()}</li>`).join("")}</ul>` : ""}`;
     bindTracks((e) => {
       const ab = e.target.closest("[data-add]");
       if (ab) {   // 专辑行的「＋」：整张加到当前播放末尾，不进入专辑
@@ -787,6 +944,19 @@ const Views = (() => {
       else if (li.dataset.album) open("album", li.dataset.album);
     });
     markRows(S.cur);
+    // 歌曲行首缩略图：一次查齐这些曲目的封面和格式
+    if (tr.length) {
+      const me = current;
+      LMS.trackArts(tr.map((t) => t.track_id)).then((a) => {
+        if (current !== me) return;
+        (a.titles_loop || []).forEach((t) => {
+          const el = content().querySelector(`[data-art="${t.id}"]`);
+          if (!el) return;
+          if (Number(t.coverart) !== 0 && t.coverid) { el.className = "lead"; el.innerHTML = `<img src="${LMS.cover(t.coverid, 100)}" alt="" loading="lazy">`; }
+          else el.textContent = fmtShort(t.type);
+        });
+      }).catch(() => {});
+    }
   }
 
   /* ---------- 路由 ---------- */
@@ -1213,13 +1383,15 @@ const Views = (() => {
     go(view);
   }
 
-  /* 曲目行状态：正在播放的那首高亮；其余已在当前播放列表里的（只在选曲窗口）变灰 */
+  /* 曲目行状态：正在播放的那首高亮；其余已在当前播放列表里的（只在选曲窗口）变灰。
+     播放列表页（表格带 .gray-only）不高亮：在当前播放里的一律变灰，正在播放的那首也一样（11-23 用户要求） */
   function markRows(cur) {
     const id = cur && String(cur.id);
     const inQ = new Set(((S.st && S.st.playlist_loop) || []).map((x) => String(x.id)));
-    document.querySelectorAll(".tracks tr[data-id]").forEach((tr) => tr.classList.toggle("playing", tr.dataset.id === id));
+    const grayOnly = (el) => !!el.closest(".gray-only");
+    document.querySelectorAll(".tracks tr[data-id]").forEach((tr) => tr.classList.toggle("playing", tr.dataset.id === id && !grayOnly(tr)));
     document.querySelectorAll("#picker tr[data-id], #picker li[data-id]").forEach((el) =>
-      el.classList.toggle("queued", el.dataset.id !== id && inQ.has(el.dataset.id)));
+      el.classList.toggle("queued", (el.dataset.id !== id || grayOnly(el)) && inQ.has(el.dataset.id)));
     // CD 页的曲目没有曲库 id，按「轨号@起点」对：同一张盘的同一轨才算
     const rows = document.querySelectorAll("#picker tr[data-cdkey]");
     if (!rows.length) return;
@@ -1424,9 +1596,10 @@ const Views = (() => {
     document.getElementById("sidebar").addEventListener("click", (e) => {
       const b = e.target.closest(".nav-item[data-view]");
       if (!b || !TOP.has(b.dataset.view)) return;
-      // 再点一次当前已打开的分类：缩回选曲窗口；点别的分类：切换过去
-      if (pickerOpen() && rootView === b.dataset.view) showPicker(false);
-      else root(b.dataset.view);
+      // 再点一次当前已打开的分类：缩回选曲窗口；点别的分类：切换过去（右侧详情开着就随后收起，见 app.js S.pickerOpened）
+      if (pickerOpen() && rootView === b.dataset.view) return showPicker(false);
+      root(b.dataset.view);
+      if (S.pickerOpened) S.pickerOpened();
     });
     document.getElementById("btn-back").onclick = () => { const prev = stack.pop(); if (prev) go(prev.view, prev.arg); };
     document.getElementById("filter").addEventListener("input", (e) => {
@@ -1451,12 +1624,17 @@ const Views = (() => {
   }
 
   /* 保存新播放列表后：如果窗口正开着「播放列表」，重新载入一览 */
+  /* 播放条的心形改了喜爱：窗口正开着「我的喜爱」就重新载入（不在选择删除的途中才刷） */
+  function favChanged() {
+    const box = content().querySelector(".selecting");
+    if (pickerOpen() && current && current.view === "favorites" && !box) go("favorites", current.arg);
+  }
   function refreshPlaylists() {
     if (pickerOpen() && rootView === "playlists") { stack.length = 0; go("playlists"); }
   }
 
   /* 当前播放列表的「更新」也用同一套磁盘核对（app.js checkQueue） */
-  return { init, markRows, refreshPlaylists, openFolder, pickerOpen, closePicker: () => showPicker(false),
+  return { init, markRows, refreshPlaylists, favChanged, openFolder, pickerOpen, closePicker: () => showPicker(false),
     checkFiles: favCheck, fileOf, extOf,
     cdProbe, onDrive: (f) => { cdDriveHooks.push(f); if (cdDrive !== null) f(cdDrive); } };
 })();

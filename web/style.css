@@ -200,6 +200,10 @@ img { display: block; }
   background: var(--side); display: flex; flex-direction: column; min-height: 0;
 }
 .queue[hidden] { display: none; }
+/* 详情打开时从右边滑进来（收起时 .closing 由脚本做向右滑出） */
+.queue { animation: q-in .22s ease-out; }
+@keyframes q-in { from { transform: translateX(100%); } to { transform: none; } }
+@media (prefers-reduced-motion: reduce) { .queue { animation: none; } }
 /* 详情面板可向右滑收起：横向手势交给脚本，竖向仍可滚动 */
 .queue { touch-action: pan-y; will-change: transform; }
 .panel-scroll { flex: 1; min-height: 0; overflow-y: auto; -webkit-overflow-scrolling: touch; padding-bottom: 110px; }
@@ -259,12 +263,19 @@ img { display: block; }
 .lcd-cover { display: block; width: 44px; height: 44px; border-radius: 6px; overflow: hidden; background: var(--row); flex: none; }
 .lcd-cover img { display: block; width: 100%; height: 100%; object-fit: cover; }
 .lcd-cover img[hidden] { display: none; }
-/* 曲名至少留 56px（约 3 个字）；时间组最窄 140px，再窄就由 fitPlayer 整组隐藏（.narrow），这时曲名可继续缩 */
-.lcd-text { flex: 1; min-width: 56px; }
+/* 两行文字至少留 56px（约 3 个字）+ 右边心形 28px（含间距）；时间组最窄 140px，再窄就由 fitPlayer 整组隐藏（.narrow），这时文字可继续缩 */
+.lcd-text { flex: 1; min-width: 84px; display: flex; align-items: center; gap: 4px; }
 .player.narrow .lcd-text { min-width: 0; }
 .lcd-title { font-size: 14px; font-weight: 600; }
 .lcd-sub { font-size: 12px; color: var(--text2); }
 .lcd-title, .lcd-sub { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* 两行文字一块：宽度按较长的那行，可缩（省略号）；心形不缩，跟在这块右边、上下居中 */
+.lcd-lines { flex: 0 1 auto; min-width: 0; }
+/* 心形和左边随机 / 循环图标同一级别：图标 22px（心形实际约 15×14，与随机图形 15px 相当），线宽与随机一致约 1.6px；
+   按钮宽仍 24px（不多占文字的位置），点击范围由 .fav-btn::after 向外扩 6px */
+.player .lcd-fav { width: 24px; height: 28px; }
+.player .lcd-fav svg { width: 22px; height: 22px; stroke-width: 1.75; }
+.player .lcd-fav[hidden], .player.nofav .lcd-fav { display: none; }
 .lcd-time { display: flex; align-items: center; gap: 8px; flex: 0 1 260px; min-width: 140px; font-size: 11px; color: var(--text2); font-variant-numeric: tabular-nums; }
 .bar { flex: 1; height: 24px; display: flex; align-items: center; cursor: pointer; touch-action: none; }
 .bar::before { content: ""; position: absolute; }
@@ -284,6 +295,7 @@ img { display: block; }
    narrow：放不下「时间 + 进度条（频谱）」，整组隐藏（大频谱在播放条上方，不受影响）；
    tiny：曲名也放不下，隐藏曲名、只留封面，封面两侧间距收到 4px、右侧内边距收到 8px（这是播放条的最小状态，
          Safari 最窄窗口时播放条约 390px，正好放得下）；
+   nofav：曲名后面的心形放不下，先藏心形（曲名留着）；
    mini：保险用，连封面都放不下时再隐藏封面 */
 .player.narrow .lcd-time { display: none; }
 .player.tiny .lcd-text { display: none; }
@@ -410,13 +422,14 @@ body.bigvu-open .picker { bottom: calc(226px + env(safe-area-inset-bottom, 0px))
   display: flex; align-items: center; gap: 8px; height: 52px; padding: 0 6px 0 16px; flex: none;
   border-bottom: 1px solid var(--line);
 }
-.pick-cat { margin: 0; flex: 1; font-size: 15px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pick-cat { margin: 0; flex: 0 1 auto; min-width: 0; font-size: 15px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .picker .filter { width: 200px; margin: 0; flex: none; }
-/* 数量：灰色，靠右（顶部在查找框左边，详情标题行在最右） */
+/* 数量：灰色，紧跟在标题名称后面，中间空 10px（11-23 用户要求，原来靠右） */
 .pick-count { flex: none; color: var(--text2); font-size: 13px; font-weight: 400; white-space: nowrap; font-variant-numeric: tabular-nums; }
-.picker-head .pick-count { margin-right: 6px; }
-.detail-head .pick-count { margin-left: 8px; }
-.pick-count:empty { display: none; }
+.picker-head .pick-count { margin: 0 auto 0 2px; }   /* 名称后面；auto 把右侧的按钮、关闭键推到最右 */
+.detail-head .pick-count { margin: 0 auto 0 6px; }   /* 标题行 gap 4px + 6px = 名称与数字相距 10px（顶部 gap 8px + 2px） */
+.detail-head .view-title { flex: 0 1 auto; min-width: 0; }
+.pick-count:empty { display: block; width: 0; }   /* 没有数字时仍占位（0 宽），右边的按钮照样被推到最右 */
 .picker-cols { flex: 1; min-height: 0; display: flex; }
 /* 两栏宽度（艺人 / 播放列表）：左栏按比例取宽，右栏占剩下的。
    --split-b：还没选条目（浏览）时左栏占比，默认 3/5；--split-d：选中条目、右栏显示详情时左栏占比，默认 2/5；
@@ -843,6 +856,13 @@ body.q-adding #cur-list .empty .e-add { display: inline-flex; align-items: cente
 :root[data-theme="dark"] .list li .sub.gone { color: #ff9f0a; }
 .fav-tools .fav-fix { white-space: nowrap; }
 
+/* 播放列表：一览里有变动的列表，右边（按钮前）灰色小字「有更新」；
+   列表里文件被删除的曲目整行变灰，右边时长那一格写「已删除」（换了格式的写「已换格式」） */
+.pl-list .pl-note { color: var(--text3); font-size: 12px; white-space: nowrap; flex: none; }
+.tracks tbody tr.pl-gone td { color: var(--text3); }
+.tracks tbody tr.pl-gone .sub { color: var(--text3); }
+.tracks td.dur.pl-tag { font-size: 11px; color: var(--text3); }
+
 /* 当前播放：文件已不在 / 已换格式的曲目。整行变淡，标题后跟一句橙色说明（不换行，行高不变）；
    标题栏出现「更新（N）」，颜色同「我的喜爱」里的更新按钮 */
 .cur-table tbody tr.q-gone td { color: var(--text3); }
@@ -855,3 +875,40 @@ body.q-adding #cur-list .empty .e-add { display: inline-flex; align-items: cente
 .pill.q-fix { height: 28px; padding: 0 12px; font-size: 13px; margin-right: 6px; white-space: nowrap; background: #55555a; color: #fff; }
 :root[data-theme="dark"] .pill.q-fix { background: #b4b4ba; color: #1c1c1e; }
 .pill.q-fix[hidden] { display: none; }
+
+/* ---------- 11-23：没有封面时缩略图里写文件格式（FLAC / WAV / MP3…），灰色粗体，跟封面方块同大小 ---------- */
+.fmt-ph, .lead.lead-fmt, .cur-table .cv .ph.fmt, .lcd-cover.fmt-mark, .np-art-empty.fmt {
+  display: flex; align-items: center; justify-content: center;
+  color: var(--text2); font-weight: 700; letter-spacing: .02em; line-height: 1; white-space: nowrap; overflow: hidden;
+}
+.list li .thumb.fmt-ph, .list li .lead.lead-fmt { font-size: 11px; color: var(--text2); }
+.cur-table .cv .ph.fmt { font-size: 9px; letter-spacing: 0; }
+.lcd-cover.fmt-mark::after { content: attr(data-fmt); font-size: 11px; }
+.np-art-empty.fmt { font-size: 40px; }
+.card .art.fmt-ph { font-size: 26px; }
+.album-head .art.fmt-ph { font-size: 32px; }
+
+/* 11-23：「＋ 全部播放」靠右放 */
+.album-head > div:last-child { flex: 1; min-width: 0; }
+.picker-cols:not(.one) .album-head > div:last-child { flex: none; align-self: stretch; }   /* 两栏时专辑头是上下排的：信息区占满宽，按钮才能靠右 */
+.album-head .actions { justify-content: flex-end; }
+
+/* 11-23：目录行尾「＋」只给最后一级目录，看过里面有曲目才露出；inline-flex 会盖掉 hidden，这里补回来 */
+.add-btn[hidden] { display: none; }
+
+/* 11-23 统一按键：带名称的「▶ 播放」黑色（同原来的全部播放）、「＋ 加入」灰色；播放列表一览的两个圆钮是它们的简化版 */
+.pill.pill-play, .pill.pill-add { display: inline-flex; align-items: center; justify-content: center; gap: 5px; white-space: nowrap; }
+.pill.pill-play svg, .pill.pill-add svg { flex: none; }
+.pill.pill-add { background: var(--hover); color: var(--text); }
+.pill.pill-add:hover { background: #d2d2d8; }
+:root[data-theme="dark"] .pill.pill-add:hover { background: #46464a; }
+.pl-acts.named { gap: 10px; }
+.pl-acts.named .pill:disabled { opacity: .45; cursor: default; }
+
+/* 11-24：单曲行首缩略图（歌曲、播放列表里的曲目）：32px 圆角方块，同「当前播放」；没有封面写格式 */
+.tracks .cv { width: 44px; padding: 0 4px 0 6px; }
+.tracks td.cv img, .tracks td.cv .ph { display: block; width: 32px; height: 32px; border-radius: 4px; object-fit: cover; background: var(--row); }
+.tracks tr:nth-child(even) td.cv img, .tracks tr:nth-child(even) td.cv .ph { background: var(--hover); }
+.tracks td.cv .ph.fmt { display: flex; align-items: center; justify-content: center; font-size: 9px; font-weight: 700; color: var(--text2); line-height: 1; }
+.tracks tr.queued td.cv, .tracks tr.pl-gone td.cv { opacity: .45; }
+.tracks.selecting tbody td.cv + td.ttl { padding-left: 32px; }
