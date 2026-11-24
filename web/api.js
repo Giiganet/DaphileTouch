@@ -159,6 +159,16 @@ const LMS = (() => {
     // 服务器状态：needsrestart / newplugins / pluginsdownloading 用来判断插件更新是否已下载、等重启安装
     serverStatus: () => q(["serverstatus", 0, 0]),
     restartServer: () => q(["restartserver"]),
+    /* 曲库扫描：rescan 是增量扫描（只查新增、改动、删除的文件，不清空曲库）；
+       rescanprogress 扫描中返回 rescan:1、steps（步骤名，逗号分隔）和各步的百分比（总数未知时为 -1） */
+    rescan: () => q(["rescan"]),
+    rescanProgress: () => q(["rescanprogress"]),
+    /* 合并输出（LMS 同步组）：pid 加入 master 所在的组，改放组里的播放列表；sync - 退出组（退出的那台停止，其余照常） */
+    syncTo: (pid, master) => rpc(pid, ["sync", master]),
+    unsync: (pid) => rpc(pid, ["sync", "-"]),
+    powerOf: (pid, v) => rpc(pid, ["power", String(v), "1"]),   // 第三个参数 1 = noplay：开机时不自动续播它自己原来的列表
+    /* 当前设备同组的其他设备 id（没同步时为空数组） */
+    syncedWith: async () => { const r = await p(["sync", "?"]); const s = String(r._sync ?? "-"); return s === "-" ? [] : s.split(",").filter(Boolean); },
     // 专辑的文件格式（没封面的专辑卡片上显示）：只取第一首的 type
     albumFmt: async (albumId) => fmtShort(((await q(["titles", 0, 1, "album_id:" + albumId, "tags:o"])).titles_loop || [{}])[0].type),
     folderPeek: (folderId) => q(["musicfolder", 0, 500, "tags:c", "folder_id:" + folderId]),
@@ -221,6 +231,12 @@ const LMS = (() => {
       await fetch(`http://${host}/cgi-bin/CD%20Ripper`, { method: "POST", mode: "no-cors", credentials: "include", body: new URLSearchParams({ drive: "sr0", ACTION: "Eject" }) });
     },
     cdStop: () => p(["stop"]),
+    /* 关机：Daphile 系统网页（80 端口）的关机地址，和系统页上的 Shutdown 按钮一样。不同源，只能发出去、读不到回应 */
+    shutdown: async () => {
+      const host = BASE ? (await q(["serverstatus", 0, 0])).ip : location.hostname;
+      if (!host) throw new Error("不知道 Daphile 主机的地址");
+      await fetch(`http://${host}/cgi-bin/Info?ACTION=shutdown`, { mode: "no-cors", credentials: "include", cache: "no-store" });
+    },
     /* 备用的出仓办法（只能开、不能关），上面那条路不通时才用（比如不是 Daphile 系统）。
        插件只在「播放 cdplay://99?Command=eject」时才执行 eject，
        所以用 LMS 的试听（preview）：先存下当前队列 → 播这条地址 → 再恢复队列。

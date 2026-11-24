@@ -3,6 +3,24 @@
 All notable changes to this project are documented here.
 Versions follow [Semantic Versioning](https://semver.org/).
 
+## [0.6.5] - 2026-11-24
+
+### Added
+- **Volume panel** (`index.html` `.vol-wrap` / `#vol-pop`; `app.js` `setVolUI()`, `renderVol()`, `toggleMute()`): the player-bar speaker button opens a panel with `#vol-mute`, `#vol-range` (0–100) and `#vol-num`. Fixed output (`digital_volume_control` 0) greys the speaker (`.mute-btn.fixed`, still tappable), disables the slider and shows `#vol-note`. Dragging sends at most one `mixer volume` per 150 ms and the final value on release; `S.volDrag` stops polling from moving the slider while dragging. A negative volume (LMS mute) is cleared with `mixer muting 0` first. Mutually exclusive with the AirPlay popup; closes on outside tap or Esc.
+- **Gear menu** (`#btn-set`, `#set-pop`; `bindSettings()`, `placeSet()`, `closeSet()`), fixed above the gear, exclusive with the AirPlay and volume popups:
+  - **Rescan library** (`Scan`, `startScan()`, `scanTick()`, `scanShow()`; `LMS.rescan`, `LMS.rescanProgress`): `ask()` → incremental `rescan` (never `wipecache`) → `rescanprogress` every 2 s (10 s when hidden). Progress ring `.scan-ring` (`--sp`, spins when the step total is unknown), subtitle 第 N 步 · step name · %, blue dot on the gear; `rescan:0` within 10 s of starting is ignored; toast on finish or `lastscanfailed`; `Views.refreshPlaylists()` afterwards; a scan already running when the page opens is shown.
+  - **Combined output** (`SyncOut`, localStorage `daphile.syncOut`; `LMS.syncTo`, `LMS.unsync`, `LMS.powerOf`, `LMS.syncedWith`): the AirPlay list becomes `.device-list.multi` with square check boxes; ticking sends `power 1 1` then `sync <current>`, unticking `sync -`; the popup stays open; the current device cannot be unticked. Turning the option off with devices still grouped asks first and unsyncs them.
+  - **Shut down** (`Halt`, `shutdownDaphile()`, `haltTick()`; `LMS.shutdown`): `ask()` (danger, power icon, extra line while playing) → no-cors GET `http://<host>/cgi-bin/Info?ACTION=shutdown` → `#halt` overlay; `serverstatus` every 5 s, reload once LMS has gone down and come back; if it never goes down within 90 s the overlay is removed with a toast. No “connection lost” toast during shutdown.
+- `ask()` icons `speakers` and `power`.
+
+### Changed
+- The version number moved from the sidebar into the gear menu (`.set-ver` under Shut down); `tools/build.py` still matches `id="app-ver"`.
+- Theme switch moved next to the gear (`.foot-row` / `.foot-left`, gear left, switch right-aligned with the sidebar items). Track 58×26, knob 22, sun and moon inside the track (`.ts-sun` / `.ts-moon`). Gear icon 22 px in `--text2`, aligned with the sidebar icons.
+- New CSS variables `--track`, `--knob`, `--knob-shadow`.
+
+### Fixed
+- None.
+
 ## [0.6.4] - 2026-11-24
 
 ### Changed

@@ -7,7 +7,7 @@ const fmtTime = (s) => {
   return h ? `${h}:${String(m).padStart(2, "0")}:${sec}` : `${m}:${sec}`;
 };
 
-const S = { st: null, cur: null, polledAt: 0, seeking: false, queueKey: "", fails: 0, cmdAt: 0 };
+const S = { st: null, cur: null, polledAt: 0, seeking: false, queueKey: "", fails: 0, cmdAt: 0, volDrag: false };
 
 /* 暂停时 AirPlay 转过来的设备：LMS 里是「停止」状态，停在那一首但没有进度。
    网页按设备记住进度 {idx, id, t}（存 localStorage），显示成「暂停在 t 秒」；按播放时从 t 秒接着放，
@@ -90,15 +90,17 @@ function render() {
   const rep = Number(st["playlist repeat"]);
   $("btn-repeat").classList.toggle("on", rep > 0);
   $("btn-repeat").classList.toggle("badge-one", rep === 1);
-  // 网页静音 = 音量设 0（取消时恢复原音量）；音量为负数是 LMS 自带静音留下的状态，也算静音
-  // 音量控制设为「固定输出」（digital_volume_control = 0）的播放器会忽略音量，按钮灰掉不可点
-  const canMute = st.digital_volume_control === undefined || Number(st.digital_volume_control) !== 0;
-  const muted = canMute && Number(st["mixer volume"]) <= 0;
+  // 喇叭键点开音量面板。网页静音 = 音量设 0（取消时恢复原音量）；音量为负数是 LMS 自带静音留下的状态，也算静音
+  // 音量控制设为「固定输出」（digital_volume_control = 0）的播放器会忽略音量：喇叭键变灰，面板里的滑块灰掉不能拖
+  const fixed = st.digital_volume_control !== undefined && Number(st.digital_volume_control) === 0;
+  const vol = Number(st["mixer volume"]);
+  const muted = !fixed && vol <= 0;
   const mb = $("btn-mute");
-  mb.disabled = !canMute;
+  mb.classList.toggle("fixed", fixed);
   mb.classList.toggle("muted", muted);
-  mb.setAttribute("aria-label", !canMute ? "静音不可用（此设备为固定音量输出）" : muted ? "取消静音" : "静音");
-  mb.title = !canMute ? "此设备为固定音量输出，无法静音" : "";
+  mb.setAttribute("aria-label", fixed ? "音量（此设备为固定音量输出，不能调节）" : muted ? "音量（已静音）" : "音量");
+  mb.title = fixed ? "此设备为固定音量输出，不能在这里调节音量" : "";
+  renderVol(fixed, vol, muted);
   // 「当前播放设备」标题后显示设备名（灰色，只显示不能点）；用播放条的 AirPlay 换设备后，下一次刷新即更新
   const devName = st.player_name || "";
   if ($("cur-dev-name").textContent !== devName) {
@@ -144,6 +146,24 @@ function renderTime() {
   $("t-cur").textContent = fmtTime(t);
   $("t-left").textContent = dur ? "-" + fmtTime(dur - t) : "";
   $("bar-fill").style.width = dur ? (t / dur) * 100 + "%" : "0";
+}
+
+/* 音量面板：滑块位置、数值、静音键。--p 是已填充（蓝色）部分的长度，按圆钮中心算（圆钮 22px） */
+function setVolUI(v) {
+  const r = $("vol-range");
+  r.value = v;
+  r.style.setProperty("--p", `calc(11px + (100% - 22px) * ${v / 100})`);
+  $("vol-num").textContent = v;
+}
+function renderVol(fixed, vol, muted) {
+  const vm = $("vol-mute");
+  $("vol-pop").classList.toggle("fixed", fixed);
+  $("vol-range").disabled = vm.disabled = fixed;
+  $("vol-note").hidden = !fixed;
+  vm.classList.toggle("muted", muted);
+  vm.setAttribute("aria-label", muted ? "取消静音" : "静音");
+  if (!S.volDrag) setVolUI(fixed ? 100 : Number.isFinite(vol) ? Math.max(0, Math.round(vol)) : 0);
+  if (fixed) $("vol-num").textContent = "";
 }
 
 /* 节奏灯对时：经 RaopBridge 的 AirPlay 设备出声约晚 2 秒，本机 D10s 约 0.1 秒 */
@@ -292,6 +312,8 @@ const fmtOfTrack = (t) => !t || isCd(t) ? ""
 const ASK_ICON = {
   trash: `<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16M9.5 7V4.5h5V7M6 7l1 13h10l1-13M10 11v5.5M14 11v5.5"/></svg>`,
   restart: `<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M20 12a8 8 0 1 1-2.6-5.9"/><path d="M20 4.5v5h-5"/></svg>`,
+  power: `<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3.5v8"/><path d="M7.2 6.4a7.5 7.5 0 1 0 9.6 0"/></svg>`,
+  speakers: `<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="8" height="16" rx="2"/><rect x="13" y="4" width="8" height="16" rx="2"/><circle cx="7" cy="14" r="2"/><circle cx="17" cy="14" r="2"/></svg>`,
 };
 function ask({ title, msg = "", ok = "确定", danger = false, icon = "" }) {
   const dlg = $("ask-dlg"), b = $("ask-ok"), ic = $("ask-icon");
@@ -559,7 +581,7 @@ async function poll() {
     }
   } catch (e) {
     S.fails++;
-    if (S.fails === 3 && !Upd.since) { toast("与 Daphile 失去连接，正在重试…"); }   // 重启 LMS 期间不提示
+    if (S.fails === 3 && !Upd.since && !Halt.since) { toast("与 Daphile 失去连接，正在重试…"); }   // 重启 LMS、关机期间不提示
   }
   poll.busy = false;
   // 页面在后台时降低频率
@@ -818,8 +840,8 @@ function bindPlayer() {
       else await (wasStop ? LMS.play() : LMS.toggle());
     });
   };
-  // 静音不用 LMS 的 muting（RaopBridge 1.8.12 下 AirPlay 设备会出错），改为：记住音量 → 设 0；取消时恢复
-  $("btn-mute").onclick = () => act(async () => {
+  // 静音不用 LMS 的 muting（RaopBridge 1.8.12 下 AirPlay 设备会出错），改为：记住音量 → 设 0；取消时恢复。按钮在音量面板里
+  const toggleMute = () => act(async () => {
     const key = "daphile.mutevol." + LMS.playerId;
     const vol = Number(S.st && S.st["mixer volume"]);
     if (vol < 0) return LMS.mute(0);   // LMS 自带静音留下的状态：直接解除，音量自动恢复
@@ -969,15 +991,21 @@ function bindPlayer() {
   /* 播放设备：列出网络上的 LMS 播放器，打勾的是当前控制的设备 */
   const SPEAKER = `<svg viewBox="0 0 24 24" width="22" height="22"><rect x="6" y="2.5" width="12" height="19" rx="2.5" fill="currentColor"/><circle cx="12" cy="14.5" r="3.4" fill="var(--bar-solid)"/><circle cx="12" cy="7" r="1.6" fill="var(--bar-solid)"/></svg>`;
   /* 把播放器列表填进播放条的 AirPlay 弹窗 */
-  async function fillDevices(ul) {
-    ul.innerHTML = `<li class="dev-empty">正在查找设备…</li>`;
+  async function fillDevices(ul, quiet = false) {
+    const multi = SyncOut.on;
+    ul.classList.toggle("multi", multi);
+    ul.setAttribute("aria-multiselectable", String(multi));
+    $("dev-hint").hidden = !multi;
+    if (!quiet) ul.innerHTML = `<li class="dev-empty">正在查找设备…</li>`;
     try {
-      const list = await LMS.players();
+      // 多选模式：当前设备 + 和它同组的设备打勾
+      const [list, buddies] = await Promise.all([LMS.players(), multi ? LMS.syncedWith().catch(() => []) : []]);
       ul.innerHTML = list.length ? list.map((p) => {
         const online = Number(p.connected) === 1;
         const cur = p.playerid === LMS.playerId;
-        const cls = [cur ? "cur" : "", online ? "" : "offline"].join(" ");
-        return `<li data-pid="${esc(p.playerid)}" class="${cls}" role="option" aria-selected="${cur}">
+        const on = cur || buddies.includes(p.playerid);
+        const cls = [cur ? "cur" : "", multi && on ? "on" : "", online ? "" : "offline"].join(" ");
+        return `<li data-pid="${esc(p.playerid)}" class="${cls}" role="option" aria-selected="${multi ? on : cur}">
           <span class="dev-ico">${SPEAKER}</span>
           <span class="dev-name">${esc(p.name)}${online ? "" : `<small>离线</small>`}</span>
           <span class="dev-chk"></span></li>`;
@@ -1027,18 +1055,81 @@ function bindPlayer() {
   $("btn-devices").onclick = (e) => {
     e.stopPropagation();
     if (!devBox.hidden) return closeDevices();
+    closeVol(); closeSet();
     devBox.hidden = false;
     $("btn-devices").classList.add("on");
     fillDevices($("device-list"));
   };
   $("device-list").onclick = (e) => {
     const li = pickedDevice(e); if (!li) return;
+    if (SyncOut.on) return toggleSync(li);
     closeDevices(); transferTo(li);
   };
+  /* 合并输出：勾上 = 开机（不自动续播它自己的列表）后加入当前设备的组，跟着放同一首；
+     取消 = 退出组（那台停止，其余照常）。当前设备固定勾选，不能取消 */
+  async function toggleSync(li) {
+    const pid = li.dataset.pid, ul = $("device-list");
+    if (pid === LMS.playerId) return toast("正在控制的设备固定勾选；要换设备请先关掉「支持合并输出」");
+    if (ul.querySelector("li.busy")) return;
+    const join = !li.classList.contains("on");
+    li.classList.add("busy");
+    await act(async () => {
+      if (join) { await LMS.powerOf(pid, 1); await LMS.syncTo(pid, LMS.playerId); }
+      else await LMS.unsync(pid);
+      toast((join ? "已加入：" : "已退出：") + devName(li));
+    }, join ? "加入失败" : "退出失败");
+    if (!devBox.hidden) await fillDevices(ul, true);
+    else li.classList.remove("busy");
+  }
+  window.refreshDevices = () => { if (!devBox.hidden) fillDevices($("device-list"), true); };
   document.addEventListener("click", (e) => {
     if (!devBox.hidden && !e.target.closest(".dev-wrap")) closeDevices();
   });
-  document.addEventListener("keydown", (e) => { if (e.key === "Escape") closeDevices(); });
+  document.addEventListener("keydown", (e) => { if (e.key === "Escape") { closeDevices(); closeVol(); } });
+
+  /* 播放条上的音量面板：点喇叭键打开（与 AirPlay 弹窗互斥）。能调音量的设备拖滑块调；固定输出的设备滑块灰掉、不能拖 */
+  const volBox = $("vol-pop"), volRange = $("vol-range");
+  const closeVol = () => { volBox.hidden = true; $("btn-mute").classList.remove("on"); S.volDrag = false; };
+  $("btn-mute").onclick = (e) => {
+    e.stopPropagation();
+    if (!volBox.hidden) return closeVol();
+    closeDevices(); closeSet();
+    volBox.hidden = false;
+    $("btn-mute").classList.add("on");
+  };
+  $("vol-mute").onclick = toggleMute;
+  document.addEventListener("click", (e) => {
+    if (!volBox.hidden && !e.target.closest(".vol-wrap")) closeVol();
+  });
+  /* 拖动中每 150ms 最多发一条 mixer volume（不节流的话一次拖动会发出上百条，AirPlay 设备跟不上），松手时补发最后的值。
+     拖动期间（S.volDrag）轮询照常，但不把滑块拨回旧值；松手的命令回来后（act 作废之前发出的轮询）才恢复跟随 */
+  const VOL_GAP = 150;
+  let volAt = 0, volTimer = 0, volSent = -1, volP = null;
+  const volSend = (v) => {
+    const neg = Number(S.st?.["mixer volume"]) < 0;   // LMS 自带静音留下的负数音量：先解除再设
+    volAt = Date.now(); volSent = v;
+    if (S.st) S.st["mixer volume"] = v;
+    volP = (async () => { if (neg) await LMS.mute(0); await LMS.volume(v); })().catch((err) => toast("调节音量失败：" + err.message));
+    return volP;
+  };
+  volRange.addEventListener("input", () => {
+    const v = Number(volRange.value);
+    S.volDrag = true;
+    setVolUI(v);
+    clearTimeout(volTimer);
+    const wait = VOL_GAP - (Date.now() - volAt);
+    if (wait <= 0) volSend(v);
+    else volTimer = setTimeout(() => volSend(Number(volRange.value)), wait);
+  });
+  volRange.addEventListener("change", () => {
+    clearTimeout(volTimer);
+    const v = Number(volRange.value);
+    act(async () => { if (v !== volSent) volSend(v); await volP; }).then(() => {
+      // 等命令期间可能套上了命令生效前发出的轮询（旧音量），先写回松手的值再放开，滑块不会弹回去一下
+      if (S.st) S.st["mixer volume"] = v;
+      S.volDrag = false; render();
+    });
+  });
 
   /* 「时间 + 进度条 + 剩余时间」整组与频谱共用一格：点一下整组切换；进度条模式下在进度条上按住左右拖动才是跳转；
      频谱模式下按住往上拖，拉出播放条上方的大频谱（这一格随即换回进度条） */
@@ -1234,8 +1325,150 @@ function bindHoverGlow() {
   });
 }
 
+/* 「支持合并输出」开关（存在本机浏览器里）：打开后 AirPlay 弹窗变成方框多选，勾上的设备加入当前设备的同步组 */
+const SyncOut = {
+  get on() { try { return localStorage.getItem("daphile.syncOut") === "1"; } catch (_) { return false; } },
+  set on(v) { try { v ? localStorage.setItem("daphile.syncOut", "1") : localStorage.removeItem("daphile.syncOut"); } catch (_) { /* 忽略 */ } },
+};
+
+/* ---------- 侧栏左下的齿轮：设置菜单（重新扫描曲库 · 支持合并输出 · 关机） ----------
+   菜单放在 body 下、position:fixed，按齿轮的位置往上弹；与 AirPlay 弹窗、音量面板互斥。 */
+const closeSet = () => { $("set-pop").hidden = true; $("btn-set").classList.remove("on"); $("btn-set").setAttribute("aria-expanded", "false"); };
+function placeSet() {
+  const r = $("btn-set").getBoundingClientRect(), pop = $("set-pop");
+  pop.style.left = Math.max(8, Math.min(r.left, innerWidth - pop.offsetWidth - 8)) + "px";
+  pop.style.bottom = Math.max(8, innerHeight - r.top + 6) + "px";
+}
+
+/* 重新扫描曲库：发 rescan（增量扫描，不清空曲库），每 2 秒查一次 rescanprogress 画进度圆。
+   LMS 分几步扫描（查找文件、读取标签、整理数据库……），步骤数事先不知道，所以进度圆显示「当前这一步」的百分比；
+   这一步总数未知（-1）时进度圆转圈。扫描完 toast 一句，并刷新开着的播放列表一览。 */
+const Scan = { t: 0, on: false, seen: false, since: 0 };
+const SCAN_STEP = [   // 步骤名取自 LMS strings.txt 的 *_PROGRESS
+  [/^discovering/i, "查找文件"], [/_deleted$/i, "移除已删除的"], [/_new$|_media$/i, "读取新文件"], [/_changed$/i, "读取改动的文件"],
+  [/^playlist/i, "播放列表"], [/^mergeva/i, "合并群星专辑"], [/artwork/i, "封面"], [/^cleanup/i, "清理数据库"],
+  [/^dboptimize/i, "整理数据库"], [/^releasetypes/i, "专辑类型"], [/^virtuallibraries/i, "资料库视图"],
+];
+const scanStepName = (s) => (SCAN_STEP.find(([re]) => re.test(s)) || [0, "处理中"])[1];
+function scanShow(r) {
+  const item = $("set-scan"), ring = item.querySelector(".scan-ring"), sub = $("scan-sub");
+  const on = !!r;
+  item.classList.toggle("scanning", on);
+  $("btn-set").classList.toggle("scanning", on);
+  $("scan-title").textContent = on ? "正在扫描曲库…" : "重新扫描曲库";
+  sub.hidden = !on;
+  if (!on) return;
+  const steps = String(r.steps || "").split(",").filter(Boolean);
+  const cur = steps.find((s) => Number(r[s]) < 100) || steps[steps.length - 1];
+  const pct = cur === undefined ? -1 : Number(r[cur]);
+  const known = pct >= 0;
+  ring.classList.toggle("spin", !known);
+  $("scan-fg").style.setProperty("--sp", known ? Math.min(100, pct) : 0);
+  sub.textContent = cur === undefined ? "正在准备…"
+    : `第 ${steps.indexOf(cur) + 1} 步 · ${scanStepName(cur)}${known ? " · " + Math.min(100, pct) + "%" : ""}`;
+}
+async function scanTick() {
+  clearTimeout(Scan.t);
+  let r = null;
+  try { r = await LMS.rescanProgress(); } catch (_) { /* 连不上：下次再查 */ }
+  if (r && Number(r.rescan) === 1) {
+    Scan.on = Scan.seen = true;
+    scanShow(r);
+  } else if (r && Scan.on) {
+    // 刚发出 rescan 时扫描程序还没起来，会先报 rescan:0；10 秒内没见到过「扫描中」就继续等
+    if (!Scan.seen && Date.now() - Scan.since < 10000) { Scan.t = setTimeout(scanTick, 1000); return; }
+    Scan.on = false;
+    scanShow(null);
+    toast(r.lastscanfailed ? "曲库扫描失败：" + r.lastscanfailed : "曲库扫描完成");
+    if (typeof Views !== "undefined") Views.refreshPlaylists();
+    return;
+  }
+  if (Scan.on) Scan.t = setTimeout(scanTick, document.hidden ? 10000 : 2000);
+}
+async function startScan() {
+  if (Scan.on) return toast("正在扫描曲库，请稍候");
+  if (!await ask({
+    title: "重新扫描曲库？", icon: "restart", ok: "扫描",
+    msg: "只查找新增、改动和删除的文件，不会清空曲库。\n扫描期间可以照常播放；曲库很大时需要几分钟。",
+  })) return;
+  if (Scan.on) return;
+  Scan.on = true; Scan.seen = false; Scan.since = Date.now();
+  scanShow({});          // 先出进度圆（转圈），等 LMS 报出步骤
+  try { await LMS.rescan(); } catch (err) { Scan.on = false; scanShow(null); return toast("扫描没能开始：" + err.message); }
+  Scan.t = setTimeout(scanTick, 1500);
+}
+
+/* 关机：确认后向 Daphile 系统网页（80 端口）发关机请求，整页盖上「正在关机」。
+   之后每 5 秒查一次 LMS：先连不上（已关）、后来又连上（按电源键开机了）就刷新页面。
+   90 秒内 LMS 一直连得上，说明关机没生效（比如这台不是 Daphile 系统），撤掉遮罩并提示。 */
+const Halt = { since: 0, t: 0, down: false, wait: 90000 };
+async function haltTick() {
+  clearTimeout(Halt.t);
+  let up = false;
+  try { await LMS.serverStatus(); up = true; } catch (_) { /* 连不上 = 已关机或正在关 */ }
+  if (!up) Halt.down = true;
+  else if (Halt.down) return location.reload();
+  else if (Date.now() - Halt.since > Halt.wait) {
+    Halt.since = 0; $("halt").hidden = true;
+    return toast("Daphile 没有关机，请到 Daphile 系统页面操作");
+  }
+  Halt.t = setTimeout(haltTick, 5000);
+}
+async function shutdownDaphile() {
+  closeSet();
+  const playing = S.st && S.st.mode === "play";
+  if (!await ask({
+    title: "关闭 Daphile？", icon: "power", ok: "关机", danger: true,
+    msg: [playing && "正在播放的音乐会停止。", "关机后只能按主机上的电源键再开机。"].filter(Boolean).join("\n"),
+  })) return;
+  Halt.since = Date.now(); Halt.down = false;
+  try { await LMS.shutdown(); }
+  catch (err) {
+    // 关机过程中连接常被直接断开，属正常；只有「不知道主机地址」这种还没发出去的才算失败
+    if (/主机的地址/.test(err.message)) { Halt.since = 0; return toast("关机失败：" + err.message); }
+  }
+  $("halt").hidden = false;
+  Halt.t = setTimeout(haltTick, 5000);
+}
+
+function bindSettings() {
+  const pop = $("set-pop"), btn = $("btn-set");
+  btn.onclick = () => {
+    if (!pop.hidden) return closeSet();
+    pop.hidden = false;
+    btn.classList.add("on"); btn.setAttribute("aria-expanded", "true");
+    placeSet();
+  };
+  $("set-scan").onclick = startScan;
+  $("set-off").onclick = shutdownDaphile;
+  const chk = $("set-sync");
+  chk.checked = SyncOut.on;
+  chk.onchange = async () => {
+    if (chk.checked) { SyncOut.on = true; toast("已打开合并输出：在 AirPlay 里勾选要一起播放的设备"); return window.refreshDevices(); }
+    // 关掉时还有设备在组里：问一下是否让它们退出（退出的设备停止，正在控制的设备照常播放）
+    let buddies = [];
+    try { buddies = await LMS.syncedWith(); } catch (_) { /* 查不到就当没有 */ }
+    if (buddies.length && !await ask({
+      title: "关闭合并输出？", ok: "关闭", icon: "speakers",
+      msg: `还有 ${buddies.length} 台设备在一起播放，关闭后它们会停止，只留正在控制的设备继续播放。`,
+    })) { chk.checked = true; return; }
+    SyncOut.on = false;
+    if (buddies.length) await act(() => Promise.all(buddies.map((b) => LMS.unsync(b))), "退出合并输出失败");
+    window.refreshDevices();
+  };
+  // 点菜单外关闭；确认弹窗是从菜单里打开的，点它不算「外面」（扫描开始后菜单留着，看得到进度圆）
+  document.addEventListener("click", (e) => {
+    if (!pop.hidden && !e.target.closest("#set-pop, #btn-set, #ask-dlg")) closeSet();
+  });
+  document.addEventListener("keydown", (e) => { if (e.key === "Escape" && $("ask-dlg").hidden) closeSet(); });
+  addEventListener("resize", () => { if (!pop.hidden) placeSet(); });
+  $("sidebar").addEventListener("scroll", () => { if (!pop.hidden) placeSet(); }, { passive: true });
+  // 打开页面时 LMS 已经在扫描（别处发起的、或上次没扫完）：也显示进度
+  scanTick();
+}
+
 async function start() {
-  if (!start.bound) { bindPlayer(); bindUpdate(); bindHoverGlow(); start.bound = true; }   // 连接失败重试时不重复绑定事件
+  if (!start.bound) { bindPlayer(); bindUpdate(); bindSettings(); bindHoverGlow(); start.bound = true; }   // 连接失败重试时不重复绑定事件
   try {
     await LMS.findPlayer();
   } catch (e) {
