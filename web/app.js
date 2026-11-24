@@ -101,6 +101,7 @@ function render() {
   mb.setAttribute("aria-label", fixed ? "音量（此设备为固定音量输出，不能调节）" : muted ? "音量（已静音）" : "音量");
   mb.title = fixed ? "此设备为固定音量输出，不能在这里调节音量" : "";
   renderVol(fixed, vol, muted);
+  renderGroupVol(st);
   // 「当前播放设备」标题后显示设备名（灰色，只显示不能点）；用播放条的 AirPlay 换设备后，下一次刷新即更新
   const devName = st.player_name || "";
   if ($("cur-dev-name").textContent !== devName) {
@@ -164,6 +165,88 @@ function renderVol(fixed, vol, muted) {
   vm.setAttribute("aria-label", muted ? "取消静音" : "静音");
   if (!S.volDrag) setVolUI(fixed ? 100 : Number.isFinite(vol) ? Math.max(0, Math.round(vol)) : 0);
   if (fixed) $("vol-num").textContent = "";
+}
+
+/* ---------- 合并播放时的音量：面板里每台设备一行，各调各的 ----------
+   组员来自 status 的 sync_master / sync_slaves；正在控制的那台用轮询的 S.st，其余面板开着时每 1.5 秒查一次 status。
+   每行的喇叭键只静音这一台（和单台时一样：记住音量 → 设 0，再点恢复）。不改 LMS 的「同步音量」设置 */
+const Grp = { ids: [], info: {}, at: 0, busy: false, drag: {}, cmdAt: {} };
+function groupIds(st) {
+  if (!st || !st.sync_master) return [];
+  const all = [st.sync_master, ...String(st.sync_slaves || "").split(",")].filter(Boolean);
+  return all.includes(LMS.playerId) ? [LMS.playerId, ...all.filter((x) => x !== LMS.playerId)] : [];   // 正在控制的排第一
+}
+const grpInfo = (st, id) => ({
+  name: st.player_name || id,
+  fixed: st.digital_volume_control !== undefined && Number(st.digital_volume_control) === 0,
+  vol: Number(st["mixer volume"]),
+});
+function renderGroupVol(st) {
+  const ids = groupIds(st), me = LMS.playerId;
+  const changed = ids.join(",") !== Grp.ids.join(",");
+  Grp.ids = ids;
+  if (ids.length > 1 && !Grp.drag[me] && S.polledAt >= (Grp.cmdAt[me] || 0)) Grp.info[me] = grpInfo(st, me);
+  // 面板开着每 1.5 秒查一次；关着每 10 秒（播放条喇叭键的灰 / 静音状态要看组里其他台）；组员变了马上查
+  const every = $("vol-pop").hidden ? 10000 : 1500;
+  if (ids.length > 1 && (changed || Date.now() - Grp.at > every)) refreshGroup();
+  renderGroup();
+}
+async function refreshGroup() {
+  if (Grp.busy) return;
+  Grp.busy = true; Grp.at = Date.now();
+  const sent = Date.now(), ids = Grp.ids.filter((x) => x !== LMS.playerId);
+  try {
+    const rs = await Promise.all(ids.map((id) => LMS.statusOf(id).catch(() => null)));
+    rs.forEach((st, k) => {
+      const id = ids[k];
+      if (st && !Grp.drag[id] && sent >= (Grp.cmdAt[id] || 0)) Grp.info[id] = grpInfo(st, id);   // 拖动中 / 命令前发出的旧状态不用
+    });
+  } finally { Grp.busy = false; }
+  renderGroup();
+}
+function setRowVol(row, v) {
+  const r = row.querySelector(".vol-range");
+  r.value = v;
+  r.style.setProperty("--p", `calc(11px + (100% - 22px) * ${v / 100})`);
+  row.querySelector(".vol-num").textContent = v;
+}
+function renderGroup() {
+  const box = $("vol-group"), pop = $("vol-pop"), on = Grp.ids.length > 1;
+  pop.classList.toggle("group", on);
+  box.hidden = !on;
+  if (!on) { box.dataset.key = ""; return; }
+  const key = Grp.ids.join(",");
+  if (box.dataset.key !== key) {
+    box.dataset.key = key;
+    const ico = $("vol-mute").innerHTML;
+    // 静音图标里的斜线缝是 SVG mask，id 不能重复（单台那一行此时隐藏，引用它的 mask 会画不出来）：每行换成自己的 id
+    box.innerHTML = Grp.ids.map((id, k) => `<div class="vg-item" data-pid="${esc(id)}">
+      <div class="vg-name"><span class="vg-nm"></span><small></small></div>
+      <div class="vol-row"><button class="icon-btn mute-btn vol-mute">${ico.replace(/m-slash2/g, "m-slash-g" + k)}</button>
+      <input class="vol-range" type="range" min="0" max="100" step="1" value="0"><span class="vol-num"></span></div></div>`).join("");
+  }
+  let anyCtl = false, allMuted = true;
+  for (const row of box.querySelectorAll(".vg-item")) {
+    const id = row.dataset.pid, i = Grp.info[id];
+    const fixed = !i || i.fixed, vol = i ? i.vol : 0, muted = !fixed && vol <= 0;
+    if (!fixed) { anyCtl = true; if (!muted) allMuted = false; }
+    row.classList.toggle("fixed", fixed);
+    row.querySelector(".vg-nm").textContent = i ? i.name : id;
+    row.querySelector("small").textContent = !i ? "…" : fixed ? "固定输出" : "";
+    const mb = row.querySelector(".vol-mute"), r = row.querySelector(".vol-range");
+    mb.disabled = r.disabled = fixed;
+    mb.classList.toggle("muted", muted);
+    mb.setAttribute("aria-label", (muted ? "取消静音：" : "静音：") + (i ? i.name : id));
+    r.setAttribute("aria-label", "音量：" + (i ? i.name : id));
+    if (!Grp.drag[id]) setRowVol(row, fixed ? 100 : Number.isFinite(vol) ? Math.max(0, Math.round(vol)) : 0);
+    if (fixed) row.querySelector(".vol-num").textContent = "";
+  }
+  // 播放条上的喇叭键：组里有能调的设备就不灰；能调的都静音了才显示静音
+  const b = $("btn-mute");
+  b.classList.toggle("fixed", !anyCtl);
+  b.classList.toggle("muted", anyCtl && allMuted);
+  b.setAttribute("aria-label", "音量（合并播放，每台单独调）");
+  b.title = "";
 }
 
 /* 节奏灯对时：经 RaopBridge 的 AirPlay 设备出声约晚 2 秒，本机 D10s 约 0.1 秒 */
@@ -1000,12 +1083,16 @@ function bindPlayer() {
     try {
       // 多选模式：当前设备 + 和它同组的设备打勾
       const [list, buddies] = await Promise.all([LMS.players(), multi ? LMS.syncedWith().catch(() => []) : []]);
+      // 多选模式下只剩一台勾着：它的勾变灰、不能点（至少要留一台在放）
+      const isOn = (p) => p.playerid === LMS.playerId || buddies.includes(p.playerid);
+      const onCount = list.filter((p) => isOn(p) && Number(p.connected) === 1).length;
       ul.innerHTML = list.length ? list.map((p) => {
         const online = Number(p.connected) === 1;
         const cur = p.playerid === LMS.playerId;
-        const on = cur || buddies.includes(p.playerid);
-        const cls = [cur ? "cur" : "", multi && on ? "on" : "", online ? "" : "offline"].join(" ");
-        return `<li data-pid="${esc(p.playerid)}" class="${cls}" role="option" aria-selected="${multi ? on : cur}">
+        const on = isOn(p);
+        const last = multi && on && online && onCount <= 1;
+        const cls = [cur ? "cur" : "", multi && on ? "on" : "", online ? "" : "offline", last ? "last" : ""].join(" ");
+        return `<li data-pid="${esc(p.playerid)}" class="${cls}" role="option" aria-selected="${multi ? on : cur}"${last ? ` aria-disabled="true" title="至少要勾选一台设备"` : ""}>
           <span class="dev-ico">${SPEAKER}</span>
           <span class="dev-name">${esc(p.name)}${online ? "" : `<small>离线</small>`}</span>
           <span class="dev-chk"></span></li>`;
@@ -1062,20 +1149,23 @@ function bindPlayer() {
   };
   $("device-list").onclick = (e) => {
     const li = pickedDevice(e); if (!li) return;
-    if (SyncOut.on) return toggleSync(li);
+    if (SyncOut.on) return li.classList.contains("last") ? undefined : toggleSync(li);   // 最后一台：灰勾，点了不响应
     closeDevices(); transferTo(li);
   };
   /* 合并输出：勾上 = 开机（不自动续播它自己的列表）后加入当前设备的组，跟着放同一首；
-     取消 = 退出组（那台停止，其余照常）。当前设备固定勾选，不能取消 */
+     取消 = 退出组（那台停止，其余照常）。每台都能取消，但至少留一台：
+     取消的是正在控制的设备时，网页改为控制组里还勾着的一台，音乐在那边接着放（LMS 会把播放列表交给它） */
   async function toggleSync(li) {
     const pid = li.dataset.pid, ul = $("device-list");
-    if (pid === LMS.playerId) return toast("正在控制的设备固定勾选；要换设备请先关掉「支持合并输出」");
     if (ul.querySelector("li.busy")) return;
     const join = !li.classList.contains("on");
+    const rest = [...ul.querySelectorAll("li.on[data-pid]")].filter((x) => x !== li && !x.classList.contains("offline"));
+    if (!join && !rest.length) return toast("至少要勾选一台设备");
     li.classList.add("busy");
     await act(async () => {
       if (join) { await LMS.powerOf(pid, 1); await LMS.syncTo(pid, LMS.playerId); }
       else await LMS.unsync(pid);
+      if (!join && pid === LMS.playerId) return switchPlayer(rest[0], `已退出：${devName(li)}，现在控制 `);
       toast((join ? "已加入：" : "已退出：") + devName(li));
     }, join ? "加入失败" : "退出失败");
     if (!devBox.hidden) await fillDevices(ul, true);
@@ -1096,11 +1186,26 @@ function bindPlayer() {
     closeDevices(); closeSet();
     volBox.hidden = false;
     $("btn-mute").classList.add("on");
+    if (Grp.ids.length > 1) refreshGroup();   // 合并播放：打开时马上查一次各台音量
   };
   $("vol-mute").onclick = toggleMute;
   document.addEventListener("click", (e) => {
     if (!volBox.hidden && !e.target.closest(".vol-wrap")) closeVol();
   });
+  /* 小窗口（AirPlay、音量、齿轮菜单）开着时，按在小窗口外面：这一下只用来关小窗口，
+     不播放、不加歌、不开始拖动或滑动删除（和选曲窗口开着时点当前播放一样）。
+     小窗口自己、打开它们的按键（点了是切换）、确认弹窗不算外面 */
+  const POPS = ".dev-wrap, .vol-wrap, #set-pop, #btn-set, #ask-dlg";
+  const popOpen = () => !devBox.hidden || !volBox.hidden || !$("set-pop").hidden;
+  document.addEventListener("pointerdown", (e) => {
+    if (!popOpen() || e.target.closest(POPS)) return;
+    closeDevices(); closeVol(); closeSet();
+    S.popClosedAt = Date.now();
+    e.stopPropagation();
+  }, true);
+  document.addEventListener("click", (e) => {
+    if (Date.now() - (S.popClosedAt || 0) < 800) { e.stopPropagation(); e.preventDefault(); S.popClosedAt = 0; }
+  }, true);
   /* 拖动中每 150ms 最多发一条 mixer volume（不节流的话一次拖动会发出上百条，AirPlay 设备跟不上），松手时补发最后的值。
      拖动期间（S.volDrag）轮询照常，但不把滑块拨回旧值；松手的命令回来后（act 作废之前发出的轮询）才恢复跟随 */
   const VOL_GAP = 150;
@@ -1129,6 +1234,59 @@ function bindPlayer() {
       if (S.st) S.st["mixer volume"] = v;
       S.volDrag = false; render();
     });
+  });
+
+  /* 合并播放时每台一行：拖滑块只调这一台（同样每 150ms 最多一条，松手补发最后的值）；点这一行的喇叭键只静音这一台 */
+  const gbox = $("vol-group"), gs = {};   // gs[pid] = { at, timer, sent, p }
+  const gSet = (pid, v) => {
+    const g = gs[pid] || (gs[pid] = { at: 0, timer: 0, sent: -1, p: null });
+    const neg = Number(Grp.info[pid]?.vol) < 0;
+    g.at = Date.now(); g.sent = v;
+    if (Grp.info[pid]) Grp.info[pid].vol = v;
+    if (pid === LMS.playerId && S.st) S.st["mixer volume"] = v;
+    g.p = (async () => { if (neg) await LMS.muteOf(pid, 0); await LMS.volumeOf(pid, v); })()
+      .catch((err) => toast("调节音量失败：" + err.message));
+    return g.p;
+  };
+  const gRow = (e) => e.target.closest(".vg-item");
+  gbox.addEventListener("input", (e) => {
+    const row = gRow(e); if (!row || !e.target.matches(".vol-range")) return;
+    const pid = row.dataset.pid, v = Number(e.target.value), g = gs[pid] || (gs[pid] = { at: 0, timer: 0, sent: -1, p: null });
+    Grp.drag[pid] = true;
+    if (pid === LMS.playerId) S.volDrag = true;
+    setRowVol(row, v);
+    clearTimeout(g.timer);
+    const wait = VOL_GAP - (Date.now() - g.at);
+    if (wait <= 0) gSet(pid, v);
+    else g.timer = setTimeout(() => gSet(pid, Number(e.target.value)), wait);
+  });
+  gbox.addEventListener("change", async (e) => {
+    const row = gRow(e); if (!row || !e.target.matches(".vol-range")) return;
+    const pid = row.dataset.pid, v = Number(e.target.value), g = gs[pid];
+    clearTimeout(g && g.timer);
+    if (!g || v !== g.sent) gSet(pid, v);
+    await gs[pid].p;
+    Grp.cmdAt[pid] = Date.now(); S.cmdAt = Date.now();   // 命令回来之前发出的查询作废，滑块不弹回
+    if (Grp.info[pid]) Grp.info[pid].vol = v;
+    if (pid === LMS.playerId && S.st) S.st["mixer volume"] = v;
+    Grp.drag[pid] = false;
+    if (pid === LMS.playerId) S.volDrag = false;
+    renderGroup();
+  });
+  // 静音不用 LMS 的 muting（AirPlay 设备会出错）：记住音量 → 设 0；再点恢复（没记录时 50）
+  gbox.addEventListener("click", async (e) => {
+    const mb = e.target.closest(".vol-mute"), row = gRow(e);
+    if (!mb || !row || mb.disabled) return;
+    const pid = row.dataset.pid, key = "daphile.mutevol." + pid, vol = Number(Grp.info[pid]?.vol);
+    let v;
+    if (vol < 0) { await LMS.muteOf(pid, 0).catch((err) => toast("静音切换失败：" + err.message)); Grp.at = 0; return refreshGroup(); }
+    if (vol > 0) { try { localStorage.setItem(key, String(vol)); } catch (_) { /* 忽略 */ } v = 0; }
+    else { let back = 0; try { back = Number(localStorage.getItem(key)) || 0; } catch (_) { /* 忽略 */ } v = back > 0 ? back : 50; }
+    await gSet(pid, v);
+    Grp.cmdAt[pid] = Date.now(); S.cmdAt = Date.now();
+    if (Grp.info[pid]) Grp.info[pid].vol = v;
+    if (pid === LMS.playerId && S.st) S.st["mixer volume"] = v;
+    renderGroup();
   });
 
   /* 「时间 + 进度条 + 剩余时间」整组与频谱共用一格：点一下整组切换；进度条模式下在进度条上按住左右拖动才是跳转；
@@ -1406,8 +1564,14 @@ async function haltTick() {
   clearTimeout(Halt.t);
   let up = false;
   try { await LMS.serverStatus(); up = true; } catch (_) { /* 连不上 = 已关机或正在关 */ }
-  if (!up) Halt.down = true;
-  else if (Halt.down) return location.reload();
+  if (!up) {   // 连不上了：改成「已关机」，一直等到再开机
+    if (!Halt.down) {
+      Halt.down = true;
+      $("halt-title").textContent = "Daphile 已关机";
+      $("halt-msg").textContent = "按主机电源键即可再开机；开机后此页会自动恢复。";
+    }
+  }
+  else if (Halt.down) return location.reload();   // 关过机、又连上了：重新载入
   else if (Date.now() - Halt.since > Halt.wait) {
     Halt.since = 0; $("halt").hidden = true;
     return toast("Daphile 没有关机，请到 Daphile 系统页面操作");
@@ -1427,6 +1591,7 @@ async function shutdownDaphile() {
     // 关机过程中连接常被直接断开，属正常；只有「不知道主机地址」这种还没发出去的才算失败
     if (/主机的地址/.test(err.message)) { Halt.since = 0; return toast("关机失败：" + err.message); }
   }
+  $("halt-title").textContent = "Daphile 正在关机"; $("halt-msg").textContent = "请稍候…";
   $("halt").hidden = false;
   Halt.t = setTimeout(haltTick, 5000);
 }

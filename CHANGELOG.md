@@ -3,6 +3,21 @@
 All notable changes to this project are documented here.
 Versions follow [Semantic Versioning](https://semver.org/).
 
+## [0.6.6] - 2026-11-24
+
+### Added
+- **Per-device volume in combined output** (`index.html` `#vol-group`; `app.js` `Grp`, `groupIds()`, `renderGroupVol()`, `refreshGroup()`, `renderGroup()`, `setRowVol()`; `api.js` `statusOf`, `volumeOf`, `muteOf`): when `status` reports a sync group, `#vol-pop.group` hides the single row and lists one `.vg-item` per member (controlled device first) with its own mute button, slider and number. Other members are read with `status` every 1.5 s while the panel is open (10 s when closed, for the player-bar speaker state). Dragging is throttled to one `mixer volume` per 150 ms per device with the final value on release; results of queries sent before a command or during a drag are ignored. Each mute button mutes only its device (remember volume → 0, restore or 50; negative volume → `mixer muting 0`). Fixed-output members are grey with “固定输出”. The player-bar speaker is grey only when no member is adjustable and shows muted only when all adjustable members are muted. LMS `syncVolume` is not changed.
+
+### Changed
+- **Combined output**: any ticked device can be unticked, including the controlled one; unticking the controlled device sends `sync -` to it and `switchPlayer()`s to a device still ticked. When only one online device is ticked, its row gets `.last` (`aria-disabled`, grey tick, taps ignored).
+- **Mute icon** (`.ico-off`): the speaker with three waves and a diagonal slash, with an SVG mask gap along the slash, instead of a speaker with a cross. Rows in `#vol-group` get their own mask id.
+- **Shut down**: `haltTick()` switches the overlay to “Daphile 已关机” on the first failed check and keeps waiting until LMS answers again, then reloads (`#halt-title`, `#halt-msg`).
+- `.vol-pop.fixed` rules apply to the single row only (`> .vol-row`).
+
+### Fixed
+- **Ticking a device in combined output stopped playback**: `syncTo(pid, master)` sent `<pid> sync <master>`, which in LMS pulls the playing master into the stopped device's group and stops it. It now sends `<master> sync <pid>`.
+- **Tapping outside a popup also acted on what was under it**: with the AirPlay list, volume panel or gear menu open, a capture-phase `pointerdown` outside them now only closes them, and the following `click` within 800 ms is swallowed.
+
 ## [0.6.5] - 2026-11-24
 
 ### Added

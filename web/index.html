@@ -21,7 +21,7 @@
   function later() { fit(); clearTimeout(t); t = setTimeout(fit, 350); }   // 旋转动画结束后再量一次，取最终尺寸
   fit(); addEventListener("resize", later); addEventListener("orientationchange", later); addEventListener("pageshow", later);
   if (window.visualViewport) visualViewport.addEventListener("resize", later); })();</script>
-<link rel="stylesheet" href="style.css?v=0.6.5">
+<link rel="stylesheet" href="style.css?v=0.6.6">
 </head>
 <body>
 <div class="app" id="app">
@@ -222,7 +222,7 @@
         </button>
         <div class="devices" id="devices" hidden>
           <ul class="device-list" id="device-list"></ul>
-          <div class="dev-hint" id="dev-hint" hidden>勾选的设备同步播放；取消勾选的那台会停止</div>
+          <div class="dev-hint" id="dev-hint" hidden>勾选的设备同步播放；取消勾选的那台会停止，至少留一台</div>
         </div>
       </div>
       <div class="vol-wrap">
@@ -232,10 +232,11 @@
             <path d="M3.5 9.5h3.2L11 5.5v13l-4.3-4H3.5z" fill="currentColor" stroke-width="1.2"/>
             <path d="M14.5 9a4 4 0 0 1 0 6"/><path d="M17 6.5a7.5 7.5 0 0 1 0 11"/><path d="M19.5 4a11 11 0 0 1 0 16"/>
           </svg>
-          <!-- 静音：喇叭 + 叉（仿 SF Symbols speaker.slash.fill） -->
+          <!-- 静音：原来的喇叭（含三道声波）上画一道斜线，斜线两侧留缝（仿 SF Symbols speaker.slash.fill） -->
           <svg class="ico-off" viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M3.5 9.5h3.2L11 5.5v13l-4.3-4H3.5z" fill="currentColor" stroke-width="1.2"/>
-            <path d="M15 9l6 6"/><path d="M21 9l-6 6"/>
+            <mask id="m-slash" maskUnits="userSpaceOnUse" x="0" y="0" width="24" height="24"><rect width="24" height="24" fill="#fff"/><path d="M3.5 3l17 18" stroke="#000" stroke-width="5"/></mask>
+            <g mask="url(#m-slash)"><path d="M3.5 9.5h3.2L11 5.5v13l-4.3-4H3.5z" fill="currentColor" stroke-width="1.2"/><path d="M14.5 9a4 4 0 0 1 0 6"/><path d="M17 6.5a7.5 7.5 0 0 1 0 11"/><path d="M19.5 4a11 11 0 0 1 0 16"/></g>
+            <path d="M3.5 3l17 18"/>
           </svg>
         </button>
         <!-- 音量面板：静音键 + 滑块 + 数值；固定输出的设备滑块灰掉，下面一行说明 -->
@@ -247,16 +248,19 @@
               <path d="M3.5 9.5h3.2L11 5.5v13l-4.3-4H3.5z" fill="currentColor" stroke-width="1.2"/>
               <path d="M14.5 9a4 4 0 0 1 0 6"/><path d="M17 6.5a7.5 7.5 0 0 1 0 11"/><path d="M19.5 4a11 11 0 0 1 0 16"/>
             </svg>
-            <!-- 静音：喇叭 + 叉（仿 SF Symbols speaker.slash.fill） -->
+            <!-- 静音：原来的喇叭（含三道声波）上画一道斜线，斜线两侧留缝（仿 SF Symbols speaker.slash.fill） -->
             <svg class="ico-off" viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">
-              <path d="M3.5 9.5h3.2L11 5.5v13l-4.3-4H3.5z" fill="currentColor" stroke-width="1.2"/>
-              <path d="M15 9l6 6"/><path d="M21 9l-6 6"/>
+              <mask id="m-slash2" maskUnits="userSpaceOnUse" x="0" y="0" width="24" height="24"><rect width="24" height="24" fill="#fff"/><path d="M3.5 3l17 18" stroke="#000" stroke-width="5"/></mask>
+              <g mask="url(#m-slash2)"><path d="M3.5 9.5h3.2L11 5.5v13l-4.3-4H3.5z" fill="currentColor" stroke-width="1.2"/><path d="M14.5 9a4 4 0 0 1 0 6"/><path d="M17 6.5a7.5 7.5 0 0 1 0 11"/><path d="M19.5 4a11 11 0 0 1 0 16"/></g>
+              <path d="M3.5 3l17 18"/>
             </svg>
             </button>
             <input class="vol-range" id="vol-range" type="range" min="0" max="100" step="1" value="0" aria-label="音量">
             <span class="vol-num" id="vol-num"></span>
           </div>
           <div class="vol-note" id="vol-note" hidden>固定音量输出，请在解码器或功放上调音量</div>
+          <!-- 合并播放时：每台设备一行（名字 + 自己的喇叭键 + 滑块），由 app.js 填入；上面单台的那一行隐藏 -->
+          <div class="vol-group" id="vol-group" hidden></div>
         </div>
       </div>
     </div>
@@ -306,12 +310,12 @@
   </button>
   <!-- 版本号：菜单最下面一行浅灰小字（tools/build.py 按 id="app-ver" 改版本号） -->
   <div class="set-sep" role="separator"></div>
-  <div class="set-ver">DaphileTouch <span class="app-ver" id="app-ver" aria-label="版本">v0.6.5</span></div>
+  <div class="set-ver">DaphileTouch <span class="app-ver" id="app-ver" aria-label="版本">v0.6.6</span></div>
 </div>
 
 <!-- 关机后盖住整页：提示按主机电源键开机，开机后自动刷新 -->
 <div class="halt" id="halt" hidden>
-  <div class="halt-box"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3.5v8"/><path d="M7.2 6.4a7.5 7.5 0 1 0 9.6 0"/></svg><h2>Daphile 正在关机</h2><p>完全关闭后，按主机电源键即可再开机；开机后此页会自动恢复。</p></div>
+  <div class="halt-box"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3.5v8"/><path d="M7.2 6.4a7.5 7.5 0 1 0 9.6 0"/></svg><h2 id="halt-title">Daphile 正在关机</h2><p id="halt-msg">请稍候…</p></div>
 </div>
 
 <!-- 确认弹窗（清除当前播放、重启安装更新）：代替浏览器自带的 confirm -->
@@ -328,9 +332,9 @@
 </div>
 
 <div class="toast" id="toast" hidden></div>
-<script src="api.js?v=0.6.5"></script>
-<script src="views.js?v=0.6.5"></script>
-<script src="rhythm.js?v=0.6.5"></script>
-<script src="app.js?v=0.6.5"></script>
+<script src="api.js?v=0.6.6"></script>
+<script src="views.js?v=0.6.6"></script>
+<script src="rhythm.js?v=0.6.6"></script>
+<script src="app.js?v=0.6.6"></script>
 </body>
 </html>

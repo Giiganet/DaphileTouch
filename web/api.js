@@ -70,6 +70,10 @@ const LMS = (() => {
     mute: (v) => p(["mixer", "muting", String(v)]),
     /* 设音量 0–100：网页用它实现静音（RaopBridge 1.8.12 下 AirPlay 设备执行 muting 1 会出错） */
     volume: (v) => p(["mixer", "volume", String(v)]),
+    /* 合并播放时，音量面板里每台设备单独调：指定设备的状态（只读）、音量、LMS 静音 */
+    statusOf: (pid) => rpc(pid, ["status", "-", 0]),
+    volumeOf: (pid, v) => rpc(pid, ["mixer", "volume", String(v)]),
+    muteOf: (pid, v) => rpc(pid, ["mixer", "muting", String(v)]),
     clear: () => p(["playlist", "clear"]),
     deleteAt: (idx) => p(["playlist", "delete", String(idx)]),
     /* 队列第 idx 首的真实文件地址（只读）。曲库里已删掉的曲目 status 不列出来，要靠它问 */
@@ -163,8 +167,10 @@ const LMS = (() => {
        rescanprogress 扫描中返回 rescan:1、steps（步骤名，逗号分隔）和各步的百分比（总数未知时为 -1） */
     rescan: () => q(["rescan"]),
     rescanProgress: () => q(["rescanprogress"]),
-    /* 合并输出（LMS 同步组）：pid 加入 master 所在的组，改放组里的播放列表；sync - 退出组（退出的那台停止，其余照常） */
-    syncTo: (pid, master) => rpc(pid, ["sync", master]),
+    /* 合并输出（LMS 同步组）：pid 加入 master 所在的组，改放组里的播放列表；sync - 退出组（退出的那台停止，其余照常）。
+       注意方向：LMS 的「<A> sync <B>」是把 B 拉进 A 的组，所以命令要发给 master。
+       反过来发（<pid> sync <master>）会把正在放的 master 先停掉、拉进停着的 pid 的组，音乐就停了 */
+    syncTo: (pid, master) => rpc(master, ["sync", pid]),
     unsync: (pid) => rpc(pid, ["sync", "-"]),
     powerOf: (pid, v) => rpc(pid, ["power", String(v), "1"]),   // 第三个参数 1 = noplay：开机时不自动续播它自己原来的列表
     /* 当前设备同组的其他设备 id（没同步时为空数组） */

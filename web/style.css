@@ -656,9 +656,22 @@ body.bigvu-open .picker { bottom: calc(226px + env(safe-area-inset-bottom, 0px))
 .vol-range::-moz-range-progress { height: 4px; border-radius: 2px; background: var(--fill); }
 .vol-range::-moz-range-thumb { width: 22px; height: 22px; border: none; border-radius: 50%; background: var(--knob); box-shadow: var(--knob-shadow); }
 /* 固定输出：整行变灰，滑块不能拖 */
-.vol-pop.fixed .vol-row { opacity: .55; }
-.vol-pop.fixed .vol-range { --fill: var(--text3); cursor: default; }
-.vol-pop.fixed .vol-mute:disabled { opacity: 1; color: var(--text3); }
+/* 只管单台那一行（> 直接子元素），不能连带合并播放时的各设备行 */
+.vol-pop.fixed > .vol-row { opacity: .55; }
+.vol-pop.fixed > .vol-row .vol-range { --fill: var(--text3); cursor: default; }
+.vol-pop.fixed > .vol-row .vol-mute:disabled { opacity: 1; color: var(--text3); }
+
+/* 合并播放：每台设备一行，名字在上、喇叭键 + 滑块 + 数值在下；点喇叭键只静音这一台 */
+.vol-group[hidden] { display: none; }
+.vol-pop.group > .vol-row, .vol-pop.group > .vol-note { display: none; }
+.vol-pop.group { max-height: 60vh; overflow-y: auto; }
+.vg-item + .vg-item { margin-top: 4px; padding-top: 6px; border-top: 1px solid var(--line); }
+.vg-name { display: flex; align-items: baseline; gap: 6px; margin: 2px 0 -4px 10px; font-size: 13px; color: var(--text); white-space: nowrap; }
+.vg-nm { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.vg-name small { flex: none; font-size: 11px; color: var(--text3); }
+.vg-item.fixed .vol-row { opacity: .55; }
+.vg-item.fixed .vol-range { --fill: var(--text3); cursor: default; }
+.vg-item.fixed .vol-mute:disabled { opacity: 1; color: var(--text3); }
 
 /* iPad 9（1080×810）及更窄：边栏收窄 */
 @media (max-width: 1100px) {
@@ -1026,6 +1039,10 @@ body.q-adding #cur-list .empty .e-add { display: inline-flex; align-items: cente
 .device-list.multi li.cur .dev-chk::after { display: none; }
 .device-list.multi li.on .dev-chk { border-color: var(--accent); background: var(--accent) var(--chk) center / 100% no-repeat; }
 .device-list li.busy { opacity: .55; pointer-events: none; }
+/* 多选模式下只剩一台勾着：勾变灰、不能点（设备名照常显示） */
+.device-list.multi li.last { cursor: default; }
+.device-list.multi li.on.last .dev-chk { border-color: var(--text3); background-color: var(--text3); }
+@media (hover: none) { .device-list.multi li.last:active { background: none; } }
 .devices .dev-hint { margin: 2px 10px 6px; font-size: 11.5px; color: var(--text3); }
 .devices .dev-hint[hidden] { display: none; }
 /* 关机后盖住整页 */
