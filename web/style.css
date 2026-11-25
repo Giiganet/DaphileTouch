@@ -748,19 +748,54 @@ body.q-adding #cur-list .empty .e-add { display: inline-flex; align-items: cente
 /* 「存为播放列表」靠近「清除」：两键间距 10px → 4px（触控区不重叠） */
 .topbar #btn-save { margin-right: -6px; }
 
-/* 选曲窗口右上角不再放查找框；只有「搜索」页保留（居中的长搜索框） */
-.picker:not(.is-search) .filter { display: none; }
+/* 选曲窗口右上角的查找框：「搜索」页居中加长；艺人、专辑、歌曲在右上角（只查本分类，11-25）；其他分类不显示 */
+.picker:not(.is-search):not(.has-find) .filter { display: none; }
+.picker.has-find .filter { flex: 0 1 200px; min-width: 96px; }
+.picker.has-find .pick-cat { flex: none; }   /* 窄窗口时标题「艺人」不缩成「艺…」，让查找框变短 */
 
 /* 文件夹详情：「‹ 文件夹名  N 首」这一行上移到窗口顶部，顶替「文件夹 N 项」；右侧留出关闭键 */
 .picker.head-up .picker-head > .pick-cat,
-.picker.head-up .picker-head > .pick-count { visibility: hidden; }
+.picker.head-up .picker-head > .pick-count,
+.picker.head-up .picker-head > .filter { visibility: hidden; }   /* 艺人专辑页：「‹ 艺人名」行盖住查找框，查找框也藏起来（返回时字还在） */
 .picker.head-up .detail-head {
   position: absolute; z-index: 1; top: env(safe-area-inset-top, 0px); left: 0; right: 56px;
   height: 52px; padding: 0 4px 0 6px;
 }
-/* 已在当前播放里的曲目：标题、曲序、时长、行首图标一起变灰（心形不变，仍可加入喜爱） */
-#picker .tracks tr.queued td:not(.fav), #picker .tracks tr.queued .sub,
-#picker .list li.queued .grow, #picker .list li.queued .sub, #picker .list li.queued .lead { color: var(--text3); }
+/* 进入某个播放列表（11-24）：同上移到窗口顶部，一行只有「‹ 列表名　删除 播放 加入　✕」。
+   不显示曲目数；「删除」（选择时是「全选」「取消」「删除（N）」）由 views.js go() 挪进标题行，靠右排在「播放」前面，
+   两组键相距 10px（行 gap 4px + 6px），「加入」到关闭键也是 10px */
+.picker.pl-head #view-count { display: none; }
+.picker.pl-head .detail-head > .fav-tools { margin: 0 0 0 auto; padding-left: 8px; }
+.picker.pl-head .detail-head .head-act:not(:empty):not([hidden]) { margin-left: 6px; padding-left: 0; }
+/* 窗口窄（最窄 340px）：「播放」「加入」收紧（左右内边距 14 → 10px），给列表名多留地方；删除圆键不变 */
+@container (max-width: 460px) {
+  .picker.pl-head .detail-head .pill { padding: 0 10px; gap: 4px; }
+  .picker.pl-head .detail-head .pl-acts.named { gap: 6px; }
+  .picker.pl-head .detail-head > .fav-tools { gap: 6px; padding-left: 6px; }
+}
+/* 已在当前播放里的曲目（11-25 改）：不再变灰，在行首缩略图右下角打一个强调色圆标（白色对勾）；
+   没有缩略图的表格（专辑页、CD 页）圆标放在曲序那一格，代替序号 */
+#picker .tracks tr.queued td.cv, #picker .tracks tr.queued td.num, #picker .list li.queued .lead { position: relative; }
+#picker .tracks tr.queued td.cv::before, #picker .tracks tr.queued td.num::before, #picker .list li.queued .lead::before,
+#picker .tracks tr.queued td.cv::after, #picker .tracks tr.queued td.num::after, #picker .list li.queued .lead::after {
+  content: ""; position: absolute; width: 14px; height: 14px; pointer-events: none;
+}
+#picker .tracks tr.queued td.cv::before, #picker .tracks tr.queued td.num::before, #picker .list li.queued .lead::before {
+  border-radius: 50%; background: var(--accent); box-shadow: 0 0 0 1.5px var(--bg);
+}
+#picker .tracks tr.queued td.cv::after, #picker .tracks tr.queued td.num::after, #picker .list li.queued .lead::after {
+  background: var(--knob);
+  -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 14 14'%3E%3Cpath d='M4 7.3l2 2 4-4.3' fill='none' stroke='%23000' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") center / 14px 14px no-repeat;
+          mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 14 14'%3E%3Cpath d='M4 7.3l2 2 4-4.3' fill='none' stroke='%23000' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") center / 14px 14px no-repeat;
+}
+/* 32px 缩略图（左内边距 6px、行内垂直居中）右下角，圆标压在图内 2px */
+#picker .tracks tr.queued td.cv::before, #picker .tracks tr.queued td.cv::after { left: 26px; top: calc(50% + 4px); }
+/* 40px 行首方块（overflow:hidden）：圆标贴右下角内侧 */
+#picker .list li.queued .lead::before, #picker .list li.queued .lead::after { right: 2px; bottom: 2px; }
+.pick-list li.queued .lead::before, .pick-list li.queued .lead::after { right: 1px; bottom: 1px; }
+/* 曲序格：序号隐去，圆标放在序号的位置 */
+#picker .tracks tr.queued td.num { color: transparent; }
+#picker .tracks tr.queued td.num::before, #picker .tracks tr.queued td.num::after { left: 8px; top: calc(50% - 7px); }
 /* 存为播放列表弹窗：放在偏上的位置，iPad 横屏弹出键盘时不被挡住 */
 :root { --warn: #c45c00; }
 :root[data-theme="dark"] { --warn: #ff9f0a; }
@@ -805,6 +840,21 @@ body.q-adding #cur-list .empty .e-add { display: inline-flex; align-items: cente
 .save-note { margin: 12px 0 0; font-size: 12px; line-height: 1.45; color: var(--text2); }
 .save-note.warn { color: var(--warn); }
 .save-note[hidden] { display: none; }
+/* 11-25：「新建列表 / 覆盖现有列表」分段选择；覆盖时下面列出已有播放列表（单选，选中为红点，同红色「覆盖」键） */
+.save-seg { display: flex; gap: 2px; padding: 2px; margin: 0 0 14px; background: var(--chip-bg); border-radius: 9px; }
+.save-seg button { flex: 1; height: 30px; border-radius: 7px; font-size: 13px; font-weight: 600; color: var(--text2); }
+.save-seg button.on { background: var(--bar-solid); color: var(--text); box-shadow: 0 1px 3px rgba(0, 0, 0, .14); }
+.save-seg button:disabled { opacity: .4; cursor: default; }
+.save-input[hidden], .save-list[hidden] { display: none; }
+.save-list { list-style: none; margin: 12px 0 0; padding: 0; max-height: 204px; overflow-y: auto; background: var(--bg); border: 1px solid var(--line); border-radius: 10px; }
+.save-list li { display: flex; align-items: center; gap: 10px; min-height: 40px; padding: 0 12px; font-size: 14px; border-bottom: 1px solid var(--line); cursor: pointer; }
+.save-list li:last-child { border-bottom: 0; }
+.save-list li.empty { color: var(--text3); cursor: default; }
+.save-list li .rd { width: 18px; height: 18px; flex: none; border-radius: 50%; border: 1.5px solid var(--text3); }
+.save-list li.on .rd { border: 5px solid var(--danger); }
+.save-list li .nm { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.save-list li .src { flex: none; font-size: 11px; color: var(--text2); background: var(--chip-bg); border-radius: 4px; padding: 1px 6px; }
+.save-list li:active { background: var(--hover); }
 .dlg-btns { display: flex; gap: 10px; margin-top: 18px; }
 .dlg-btns button { flex: 1; height: 42px; border-radius: 10px; font-size: 15px; font-weight: 600; }
 .dlg-btns .ghost { background: var(--chip-bg); color: var(--text); }
@@ -889,6 +939,9 @@ body.q-adding #cur-list .empty .e-add { display: inline-flex; align-items: cente
 /* 「删除」「删除（N）」统一浅红底、红字（带垃圾桶）；选择状态下「全选」「取消」用深灰 */
 .fav-tools .fav-main { display: inline-flex; align-items: center; justify-content: center; gap: 5px; min-width: 102px; }   /* 「＋ 全部播放」实测宽 101.6px */
 .fav-tools .fav-del { min-width: 114px; }   /* 「删除（N）」个位数时宽度不跳动 */
+/* 播放列表里面的「删除」：浅红正圆（直径同其他键高 30px），只有垃圾桶图标；选择时仍是「全选 取消 删除（N）」 */
+.fav-tools .fav-main.fav-round,
+.picker.pl-head .detail-head .fav-tools .fav-main.fav-round { width: 30px; min-width: 0; height: 30px; padding: 0; gap: 0; border-radius: 50%; flex: none; }   /* 第二条：压过窄窗口时三键收紧的内边距 */
 .fav-tools .fav-main svg { flex: none; }
 .fav-tools .fav-b { background: #55555a; color: #fff; }
 :root[data-theme="dark"] .fav-tools .fav-b { background: #b4b4ba; color: #1c1c1e; }
@@ -975,7 +1028,7 @@ body.q-adding #cur-list .empty .e-add { display: inline-flex; align-items: cente
 .tracks td.cv img, .tracks td.cv .ph { display: block; width: 32px; height: 32px; border-radius: 4px; object-fit: cover; background: var(--row); }
 .tracks tr:nth-child(even) td.cv img, .tracks tr:nth-child(even) td.cv .ph { background: var(--hover); }
 .tracks td.cv .ph.fmt { display: flex; align-items: center; justify-content: center; font-size: 9px; font-weight: 700; color: var(--text2); line-height: 1; }
-.tracks tr.queued td.cv, .tracks tr.pl-gone td.cv { opacity: .45; }
+.tracks tr.pl-gone td.cv { opacity: .45; }
 .tracks.selecting tbody td.cv + td.ttl { padding-left: 32px; }
 
 /* ---------- 侧栏左下的齿轮（设置菜单）：重新扫描曲库、合并输出、关机 ---------- */
@@ -1035,6 +1088,31 @@ body.q-adding #cur-list .empty .e-add { display: inline-flex; align-items: cente
   -webkit-appearance: none; appearance: none; border: 1.5px solid var(--text3); border-radius: 5px; background: none;
 }
 .set-chk:checked { border-color: var(--accent); background: var(--accent) var(--chk) center / 100% no-repeat; }
+/* 附属选项（「修复曲库」附属于「重新扫描曲库」）：整行右移一格，勾选框对齐上一行的文字，行高略矮 */
+.set-item.set-child { padding-left: 46px; min-height: 40px; }
+.set-item.set-child[hidden] { display: none; }
+/* 「重新扫描曲库」右边的三个点：盖在这一行右端，扫描按钮右侧留出位置，文字不会跑到点下面 */
+.set-scan-row { position: relative; }
+.set-scan-row #set-scan { padding-right: 48px; }
+.set-more {
+  position: absolute; right: 6px; top: 50%; width: 36px; height: 36px; margin-top: -18px; padding: 0;
+  display: flex; align-items: center; justify-content: center;
+  border: 0; border-radius: 9px; background: none; color: var(--text2); cursor: pointer; -webkit-tap-highlight-color: transparent;
+}
+.set-more svg { width: 20px; height: 20px; fill: currentColor; stroke: none; }
+.set-more[aria-expanded="true"] { background: var(--hover); color: var(--accent); }
+@media (hover: hover) { .set-more:hover { background: var(--hover); color: var(--text); } }
+@media (hover: none) { .set-more:active { background: var(--hover); } }
+/* 「修复曲库」勾选：红色勾，表示这是会清空曲库的操作；扫描期间灰掉不能点 */
+#set-fix:checked { border-color: var(--danger); background-color: var(--danger); }
+.set-item.off { cursor: default; opacity: .45; }
+.set-item.off .set-chk { cursor: default; }
+@media (hover: hover) { .set-item.off:hover { background: none; } }
+@media (hover: none) { .set-item.off:active { background: none; } }
+/* 修复曲库期间整个资料库停用（app.js 给 #app 加 lib-locked）：侧栏分类灰掉，点了只提示；CD 播放器不受影响 */
+.lib-locked .nav-item[data-view]:not(.nav-cd) { opacity: .4; }
+@media (hover: hover) { .lib-locked .nav-item[data-view]:not(.nav-cd):hover { background: none; } }
+.lib-locked .nav-group::after { content: " · 修复中"; color: var(--danger); }
 .device-list.multi .dev-chk { border-radius: 5px; }
 .device-list.multi li.cur .dev-chk::after { display: none; }
 .device-list.multi li.on .dev-chk { border-color: var(--accent); background: var(--accent) var(--chk) center / 100% no-repeat; }

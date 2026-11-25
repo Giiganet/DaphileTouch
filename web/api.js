@@ -167,6 +167,11 @@ const LMS = (() => {
        rescanprogress 扫描中返回 rescan:1、steps（步骤名，逗号分隔）和各步的百分比（总数未知时为 -1） */
     rescan: () => q(["rescan"]),
     rescanProgress: () => q(["rescanprogress"]),
+    /* 修复曲库：wipecache 清空曲库后全部重新扫描（LMS 设置里的「清除曲库并重新扫描所有内容」）。
+       LMS 会先把各设备的当前播放列表换成临时条目（tmp://），扫描期间曲库是空的、逐步补回 */
+    wipecache: () => q(["wipecache"]),
+    /* 曲库里一共几首（只读）：判断别处发起的扫描是不是清库重扫——清库后数目会骤降 */
+    trackCount: () => q(["titles", 0, 0]).then((r) => Number(r.count) || 0),
     /* 合并输出（LMS 同步组）：pid 加入 master 所在的组，改放组里的播放列表；sync - 退出组（退出的那台停止，其余照常）。
        注意方向：LMS 的「<A> sync <B>」是把 B 拉进 A 的组，所以命令要发给 master。
        反过来发（<pid> sync <master>）会把正在放的 master 先停掉、拉进停着的 pid 的组，音乐就停了 */
@@ -219,6 +224,8 @@ const LMS = (() => {
     search: (term) => q(["search", 0, 30, "term:" + term]),
     /* 一批曲目的封面和格式（搜索结果的缩略图用；只读） */
     trackArts: (ids) => q(["titles", 0, ids.length, "track_id:" + ids.join(","), "tags:cjo"]),
+    /* 一批曲目的完整信息，标签和 status 一样（临时条目对回曲库后顶替用；只读） */
+    tracksById: (ids) => q(["titles", 0, ids.length, "track_id:" + ids.join(","), STATUS_TAGS]),
 
     /* ---------- CD（靠 LMS 的 CDplayer 插件：读盘、查曲名、cdplay:// 播放都在插件里） ---------- */
     /* 插件在不在：can 是只读查询，在 = 1 */

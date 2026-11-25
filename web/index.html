@@ -21,7 +21,7 @@
   function later() { fit(); clearTimeout(t); t = setTimeout(fit, 350); }   // 旋转动画结束后再量一次，取最终尺寸
   fit(); addEventListener("resize", later); addEventListener("orientationchange", later); addEventListener("pageshow", later);
   if (window.visualViewport) visualViewport.addEventListener("resize", later); })();</script>
-<link rel="stylesheet" href="style.css?v=0.6.6">
+<link rel="stylesheet" href="style.css?v=0.7.0">
 </head>
 <body>
 <div class="app" id="app">
@@ -271,16 +271,21 @@
 <div class="modal" id="save-dlg" hidden>
   <div class="dlg" role="dialog" aria-modal="true" aria-labelledby="save-title">
     <h2 id="save-title">存为播放列表</h2>
+    <div class="save-seg" id="save-seg" role="radiogroup" aria-label="保存方式">
+      <button type="button" data-m="new" role="radio">新建列表</button>
+      <button type="button" data-m="over" role="radio">覆盖现有列表</button>
+    </div>
     <div class="save-row">
       <div class="save-art" id="save-art"></div>
       <div class="save-field">
-        <div class="save-input">
+        <div class="save-input" id="save-input">
           <input id="save-name" type="text" autocomplete="off" autocapitalize="off" spellcheck="false" enterkeyhint="done" aria-label="播放列表名称">
           <button class="save-clear" id="save-clear" type="button" aria-label="清空名称"><svg viewBox="0 0 12 12" width="9" height="9" aria-hidden="true"><path d="M2.5 2.5l7 7M9.5 2.5l-7 7" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg></button>
         </div>
         <div class="save-meta" id="save-meta"></div>
       </div>
     </div>
+    <ul class="save-list" id="save-list" role="radiogroup" aria-label="要覆盖的播放列表" hidden></ul>
     <p class="save-note" id="save-note" hidden></p>
     <div class="dlg-btns">
       <button class="ghost" id="save-cancel" type="button">取消</button>
@@ -291,6 +296,8 @@
 
 <!-- 设置菜单（点侧栏左下的齿轮）：放在边栏外面，免得被边栏的滚动区域裁掉、被播放条盖住 -->
 <div class="set-pop" id="set-pop" role="menu" hidden>
+  <!-- 「重新扫描曲库」一行：右边的三个点展开附属选项「修复曲库」（按钮不能套按钮，所以两个按钮并排放在一个容器里） -->
+  <div class="set-scan-row">
   <button class="set-item" id="set-scan" role="menuitem">
     <span class="set-ico">
       <svg class="ico-scan" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 12a8 8 0 1 1-2.6-5.9"/><path d="M20 4.5v5h-5"/></svg>
@@ -299,6 +306,14 @@
     </span>
     <span class="set-txt"><span class="set-title" id="scan-title">重新扫描曲库</span><span class="set-sub" id="scan-sub" hidden></span></span>
   </button>
+  <button class="set-more" id="set-more" aria-label="更多扫描选项" aria-expanded="false" aria-controls="set-fix-row"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="5.5" cy="12" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="18.5" cy="12" r="1.6"/></svg></button>
+  </div>
+  <!-- 修复曲库：平时收起，点三个点才出现；勾上后点上面的「重新扫描曲库」改为清空曲库再全部重读（wipecache）。
+       不记住：收起、关菜单、扫完都会取消勾选 -->
+  <label class="set-item set-child" id="set-fix-row" hidden>
+    <span class="set-ico"><input type="checkbox" class="set-chk" id="set-fix"></span>
+    <span class="set-txt"><span class="set-title">修复曲库</span><span class="set-sub">先清库再扫描</span></span>
+  </label>
   <label class="set-item" id="set-sync-row">
     <span class="set-ico"><input type="checkbox" class="set-chk" id="set-sync"></span>
     <span class="set-txt"><span class="set-title">支持合并输出</span><span class="set-sub">可勾选多个设备同时播放</span></span>
@@ -310,7 +325,7 @@
   </button>
   <!-- 版本号：菜单最下面一行浅灰小字（tools/build.py 按 id="app-ver" 改版本号） -->
   <div class="set-sep" role="separator"></div>
-  <div class="set-ver">DaphileTouch <span class="app-ver" id="app-ver" aria-label="版本">v0.6.6</span></div>
+  <div class="set-ver">DaphileTouch <span class="app-ver" id="app-ver" aria-label="版本">v0.7.0</span></div>
 </div>
 
 <!-- 关机后盖住整页：提示按主机电源键开机，开机后自动刷新 -->
@@ -332,9 +347,9 @@
 </div>
 
 <div class="toast" id="toast" hidden></div>
-<script src="api.js?v=0.6.6"></script>
-<script src="views.js?v=0.6.6"></script>
-<script src="rhythm.js?v=0.6.6"></script>
-<script src="app.js?v=0.6.6"></script>
+<script src="api.js?v=0.7.0"></script>
+<script src="views.js?v=0.7.0"></script>
+<script src="rhythm.js?v=0.7.0"></script>
+<script src="app.js?v=0.7.0"></script>
 </body>
 </html>

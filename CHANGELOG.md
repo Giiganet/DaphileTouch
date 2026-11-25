@@ -3,6 +3,26 @@
 All notable changes to this project are documented here.
 Versions follow [Semantic Versioning](https://semver.org/).
 
+## [0.7.0] - 2026-11-25
+
+### Added
+- **Find within a category** (`views.js` `FIND`, `findTerm()`, `noHit()`; `style.css` `.picker.has-find`): Artists, Albums and Songs show the picker filter as “查找艺人 / 专辑 / 歌曲”. Typing re-routes to the same category with LMS `search:<term>` (`artists`, `albums`, `titles`; name match, case-insensitive, CJK works); empty input lists everything; no match shows “没有找到 …”. Other categories hide the box; the sidebar Search still searches the whole library. `.pick-cat` is `flex:none` and the box shrinks to 96 px so the title is never truncated.
+- **Folders remember their position** (`foldMemo { stack, cur, top, at }`, `saveFolders()`, `restoreFolders()`, `foldKeep()` = `window.DT_FOLD_KEEP` or 300 s): saved when the picker closes or another category is chosen; tapping Folders within 5 minutes restores the folder stack, current folder and `scrollTop`, otherwise opens the root.
+- **Save queue — new or replace** (`app.js` `saveQueue()`; `index.html` `#save-seg`, `#save-input`, `#save-list`; `style.css` `.save-seg`, `.save-list`, `.rd`, `.src`): “新建列表” disables Save when the name matches an existing playlist (case-insensitive); “覆盖现有列表” lists playlists as radio rows, preselects and tags the source playlist (`status` `playlist_id` / `playlist_name`), and saves with the same name via `playlist save` (LMS updates the list in place, id unchanged). `writeError` during a scan reports “曲库正在扫描，稍后再存”.
+- **Repair library** (`app.js` gear menu, `LMS.wipecache`, `LMS.trackCount`): a “⋯” next to Rescan reveals a “修复曲库” check box; rescanning with it ticked sends `wipecache`. The library is locked (`Views.setLocked`) until the scan ends; a scan started elsewhere is treated as a wipe when the track count drops below half of the remembered `daphile.libN`.
+- **tmp:// entries matched to the library** (`views.js` `libTracks`, `LMS.tracksById`; `app.js` queue): temporary entries in playlists and the queue are looked up by path and displayed with the library track's cover, tags and heart. LMS's queue and playlists are not modified.
+
+### Changed
+- **Artists is a single column** (`TWO` is empty; `artists(term)` renders `#al.art-list`): tapping an artist opens its albums with the “‹ name” row moved up into the picker head (`head-up`, now for folders and artists); `artMemo { term, n, top }` plus `paged().fill(n)` restore the list position on return.
+- **Queued tracks** (`.queued`) are no longer dimmed; a blue round badge with a white tick sits on the thumbnail (replaces the track number on album/CD pages).
+- Playlist detail header is one row: name, Play, Add.
+
+### Removed
+- **Delete inside a playlist** (`selDelete` `del:false`): every `.m3u` write makes Daphile trigger `rescan external` (a full library scan), and further edits during it fail. Trim via the queue and “覆盖现有列表” instead. Deleting whole playlists stays.
+
+### Fixed
+- tmp:// tracks had no cover and could not be favorited (see Added).
+
 ## [0.6.6] - 2026-11-24
 
 ### Added

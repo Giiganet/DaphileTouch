@@ -277,6 +277,19 @@ document.addEventListener("error", (e) => {
    由 views.js 调 S.favChanged() 重新问；另外每 30 秒顺带再问一次，兜住在其他设备上改的。
    点心形和选曲窗口里的一样：空心 → 加入喜爱；实心 → 移出喜爱。CD、曲库里已不在的曲目不显示 */
 const Fav = { key: "", on: false, at: 0, seq: 0, busy: false };
+/* 队列里的临时条目（tmp://）对回曲库（见 views.js libTracks）：已对上的直接顶替，没查过的在后台查，
+   查到后让队列重绘，下一次轮询就有封面和心形。加喜爱用曲库里的 file:// 地址（libUrl） */
+const Lib = { busy: false };
+function libApply(st) {
+  const loop = st && st.playlist_loop;
+  if (!loop || !loop.some((t) => /^tmp:/.test(t.url || ""))) return st;
+  const want = loop.filter((t) => Views.libWant(t.url)).map((t) => t.url);
+  if (want.length && !Lib.busy) {
+    Lib.busy = true;
+    Views.libTracks(want).then((m) => { if (m.size) S.queueKey = ""; }).catch(() => {}).finally(() => { Lib.busy = false; });
+  }
+  return { ...st, playlist_loop: loop.map((t) => { const l = !t.libUrl && Views.libPeek(t.url); return l ? Views.libMerge(t, l) : t; }) };
+}
 const favable = (cur) => !!cur && !cur.qhidden && !isCd(cur) && Number(cur.id) > 0 && !!cur.url;
 function paintFav() {
   const b = $("lcd-fav");
@@ -319,7 +332,7 @@ async function toggleFav() {
     } else if (Number(ex.exists)) {               // 其实已在喜爱里（别处加的）：只刷新成实心
       Fav.on = true; toast("已在喜爱列表中");
     } else {
-      await LMS.favAdd(cur.url, title);
+      await LMS.favAdd(cur.libUrl || cur.url, title);
       Fav.on = true; toast(`已加入喜爱：${title}`);
     }
     Fav.key = key; Fav.at = Date.now();
@@ -362,7 +375,7 @@ function renderNowPlaying(cur) {
     ["时长", cur.duration ? fmtTime(cur.duration) : ""],
   ].filter((r) => r[1]);
   // 专辑名可点：选曲窗口滑入，直接打开这张专辑（全部曲目）
-  const furl = /^file:\/\//.test(cur.url || "") ? cur.url : "";   // 只有本地或网络盘上的文件才有文件夹
+  const furl = [cur.libUrl, cur.url].find((u) => /^file:\/\//.test(u || "")) || "";   // 只有本地或网络盘上的文件才有文件夹
   $("np-meta").innerHTML = rows.map(([k, val]) => `<dt>${k}</dt><dd>${k === "专辑" && furl
     ? `<button class="np-link" data-folder="${esc(furl)}">${esc(val)}</button>` : esc(val)}</dd>`).join("");
 }
@@ -423,8 +436,12 @@ function ask({ title, msg = "", ok = "确定", danger = false, icon = "" }) {
 }
 
 /* ---------- 把当前播放存成播放列表（自定义弹窗） ----------
-   名称里文件名不允许的字符和冒号（冒号会被 LMS 当成「键:值」参数）换成「-」。
-   打开时取一次已有播放列表的名称：输入同名时弹窗里直接提示，「保存」变成红色「覆盖」，不再另弹确认框。 */
+   顶上两个选项（11-25）：
+   - 新建列表：输入名称；和已有列表同名时不让存，提示换名或改用「覆盖现有列表」。
+     名称里文件名不允许的字符和冒号（冒号会被 LMS 当成「键:值」参数）换成「-」。
+   - 覆盖现有列表：从已有播放列表里选一个，它原来的内容换成当前播放（红色「覆盖」）。
+     当前播放是从某个播放列表载入的（status 带 playlist_name）时，预先选中它，并标「来源」。
+   覆盖就是按同名再存一次（LMS 按文件地址更新同一个列表，编号不变），只写一次 .m3u，Daphile 只扫一次曲库。 */
 const BAD_CH = /[\\/:*?"<>|]/;
 const cleanName = (s) => s.replace(new RegExp(BAD_CH, "g"), "-").replace(/\s+/g, " ").trim();
 async function saveQueue() {
@@ -445,23 +462,54 @@ async function saveQueue() {
   $("save-meta").textContent = [`${n} 首`, sec ? fmtTime(sec) : ""].filter(Boolean).join(" · ");
 
   let names = null;   // 已有播放列表名称；取到之前为 null
+  let mode = "new", pick = "";
+  const src = S.st && S.st.playlist_name ? String(S.st.playlist_name) : "";
+  const seg = $("save-seg"), list = $("save-list"), field = $("save-input");
   const same = () => { const k = cleanName(inp.value).toLowerCase(); return names && names.find((x) => x.toLowerCase() === k); };
+  const drawList = () => {
+    list.innerHTML = !names ? `<li class="empty">读取中…</li>`
+      : names.map((x, i) => `<li data-n="${i}" class="${x === pick ? "on" : ""}" role="radio" aria-checked="${x === pick}"><span class="rd"></span><span class="nm">${esc(x)}</span>${x === src ? `<span class="src">来源</span>` : ""}</li>`).join("");
+    const on = list.querySelector("li.on");
+    if (on) on.scrollIntoView({ block: "nearest" });
+  };
   const check = () => {
-    const name = cleanName(inp.value), dup = name && same();
-    ok.disabled = !name;
-    ok.textContent = dup ? "覆盖" : "保存";
-    ok.classList.toggle("danger", !!dup);
-    $("save-clear").hidden = !inp.value;
-    const msg = dup ? `已有同名播放列表「${dup}」，覆盖后它原来的内容会被当前播放替换。`
-      : BAD_CH.test(inp.value) ? `名称里的 \\ / : * ? " < > | 会换成「-」。` : "";
+    const over = mode === "over";
+    seg.querySelectorAll("button").forEach((b) => { b.classList.toggle("on", b.dataset.m === mode); b.setAttribute("aria-checked", b.dataset.m === mode); });
+    seg.querySelector('[data-m="over"]').disabled = !!names && !names.length;
+    field.hidden = over;
+    list.hidden = !over;
+    let msg = "", warn = false;
+    if (over) {
+      ok.disabled = !pick;
+      ok.textContent = "覆盖";
+      ok.classList.add("danger");
+      msg = pick ? `「${pick}」原来的内容会被当前播放的 ${n} 首替换。` : "选一个要覆盖的播放列表。";
+      warn = !!pick;
+    } else {
+      const name = cleanName(inp.value), dup = name && same();
+      ok.disabled = !name || !!dup;
+      ok.textContent = "保存";
+      ok.classList.remove("danger");
+      $("save-clear").hidden = !inp.value;
+      msg = dup ? `已有同名播放列表「${dup}」。换个名字，或改用「覆盖现有列表」。`
+        : BAD_CH.test(inp.value) ? `名称里的 \\ / : * ? " < > | 会换成「-」。` : "";
+      warn = !!dup;
+    }
     note.textContent = msg;
     note.hidden = !msg;
-    note.classList.toggle("warn", !!dup);
+    note.classList.toggle("warn", warn);
   };
-  const loaded = LMS.playlists().then((r) => { names = (r.playlists_loop || []).map((x) => String(x.playlist)); check(); })
-    .catch(() => { names = []; });
+  const setMode = (m) => {
+    mode = m;
+    if (m === "over") { if (!pick && names && names.includes(src)) pick = src; drawList(); inp.blur(); }
+    check();
+    if (m === "new") inp.focus();
+  };
+  const loaded = LMS.playlists().then((r) => { names = (r.playlists_loop || []).map((x) => String(x.playlist)); })
+    .catch(() => { names = []; }).then(() => { if (mode === "over") drawList(); check(); });
 
   inp.value = `当前播放 ${d.getFullYear()}-${p2(d.getMonth() + 1)}-${p2(d.getDate())} ${p2(d.getHours())}.${p2(d.getMinutes())}`;
+  mode = "new"; pick = "";
   check();
   dlg.hidden = false;
   inp.focus();
@@ -471,7 +519,8 @@ async function saveQueue() {
     const close = (v) => { dlg.hidden = true; document.removeEventListener("keydown", key); inp.blur(); done(v); };
     const submit = async () => {
       if (ok.disabled) return;
-      if (!names) {   // 名称还没取回：先等它，若发现同名就停在弹窗里显示提示，让用户再点一次「覆盖」
+      if (mode === "over") return close(pick);
+      if (!names) {   // 名称还没取回：先等它，若发现同名就停在弹窗里显示提示
         await loaded;
         if (same()) return check();
       }
@@ -484,6 +533,8 @@ async function saveQueue() {
     };
     document.addEventListener("keydown", key);
     inp.oninput = check;
+    seg.onclick = (e) => { const b = e.target.closest("button[data-m]"); if (b && !b.disabled && b.dataset.m !== mode) setMode(b.dataset.m); };
+    list.onclick = (e) => { const li = e.target.closest("li[data-n]"); if (!li) return; pick = names[li.dataset.n]; drawList(); check(); };
     $("save-clear").onclick = () => { inp.value = ""; check(); inp.focus(); };
     $("save-cancel").onclick = () => close(null);
     ok.onclick = submit;
@@ -491,8 +542,9 @@ async function saveQueue() {
   });
   if (!name) return;
   await act(async () => {
-    await LMS.savePlaylist(name);
-    toast(`已存为播放列表：${name}（${n} 首）`);
+    const r = await LMS.savePlaylist(name);
+    if (r && Number(r.writeError)) throw new Error("曲库正在扫描，稍后再存");
+    toast(`${mode === "over" ? "已覆盖播放列表" : "已存为播放列表"}：${name}（${n} 首）`);
     if (typeof Views !== "undefined" && Views.refreshPlaylists) Views.refreshPlaylists();
   }, "保存失败");
 }
@@ -543,7 +595,7 @@ async function checkQueue() {
     if (!S.st || String(S.st.playlist_timestamp) !== ts) return;
     const gone = new Map(items.filter((x) => x.gone).map((x) => [x.url, x.gone]));
     const key = (m) => [...m].map(([u, g]) => u + ">" + (g.twin || "")).join("|");
-    if (key(gone) !== key(QF.gone) || paths) { QF.gone = gone; QF.ver++; S.queueKey = ""; S.st = fixLoop(S.st); render(); }
+    if (key(gone) !== key(QF.gone) || paths) { QF.gone = gone; QF.ver++; S.queueKey = ""; S.st = libApply(fixLoop(S.st)); render(); }
   } catch (_) { /* 查不到就当没变化，下次再查 */ }
   finally { QF.busy = false; }
 }
@@ -654,8 +706,10 @@ async function poll() {
     const st = await LMS.status();
     S.fails = 0;
     if (sentAt >= S.cmdAt) {
-      S.st = fixLoop(Resume.apply(st));
+      S.st = libApply(fixLoop(Resume.apply(st)));
       S.polledAt = Date.now();
+      // status 在扫描期间带 rescan:1：页面开着时别处发起的扫描（LMS 设置页、定时插件、自动重扫）也显示进度
+      if (Number(st.rescan) === 1 && !Scan.on && !Scan.probe) { Scan.probe = true; scanTick().finally(() => { Scan.probe = false; }); }
       render();
       checkAdding();
       const n = Number(S.st.playlist_tracks) || 0;
@@ -1491,7 +1545,15 @@ const SyncOut = {
 
 /* ---------- 侧栏左下的齿轮：设置菜单（重新扫描曲库 · 支持合并输出 · 关机） ----------
    菜单放在 body 下、position:fixed，按齿轮的位置往上弹；与 AirPlay 弹窗、音量面板互斥。 */
-const closeSet = () => { $("set-pop").hidden = true; $("btn-set").classList.remove("on"); $("btn-set").setAttribute("aria-expanded", "false"); };
+const closeSet = () => { $("set-pop").hidden = true; $("btn-set").classList.remove("on"); $("btn-set").setAttribute("aria-expanded", "false"); fixOpts(false); };
+/* 「重新扫描曲库」右边三个点：展开 / 收起附属选项「修复曲库」。
+   收起（含关菜单）时取消勾选，免得看不见的勾让下次扫描变成清库；修复进行中不动它（勾选项本来就灰着） */
+function fixOpts(on) {
+  if (!on && Scan.on && Scan.fix) return;
+  $("set-fix-row").hidden = !on;
+  $("set-more").setAttribute("aria-expanded", String(!!on));
+  if (!on) $("set-fix").checked = false;
+}
 function placeSet() {
   const r = $("btn-set").getBoundingClientRect(), pop = $("set-pop");
   pop.style.left = Math.max(8, Math.min(r.left, innerWidth - pop.offsetWidth - 8)) + "px";
@@ -1501,7 +1563,24 @@ function placeSet() {
 /* 重新扫描曲库：发 rescan（增量扫描，不清空曲库），每 2 秒查一次 rescanprogress 画进度圆。
    LMS 分几步扫描（查找文件、读取标签、整理数据库……），步骤数事先不知道，所以进度圆显示「当前这一步」的百分比；
    这一步总数未知（-1）时进度圆转圈。扫描完 toast 一句，并刷新开着的播放列表一览。 */
-const Scan = { t: 0, on: false, seen: false, since: 0 };
+const Scan = { t: 0, on: false, seen: false, since: 0, fix: false };
+/* 修复曲库（wipecache）：清空曲库后全部重读。期间整个资料库停用（Views.setLocked），扫完自动恢复、取消勾选。
+   别处发起的扫描（LMS 设置页、定时插件）分不出是不是清库：记下平时的曲目数，扫描中曲目数掉到一半以下就当作清库 */
+const LIB_N = "daphile.libCount";
+const libCountSaved = () => { try { return Number(localStorage.getItem(LIB_N)) || 0; } catch (_) { return 0; } };
+async function libCountSave() {
+  try { const n = await LMS.trackCount(); if (n > 0) localStorage.setItem(LIB_N, String(n)); } catch (_) { /* 记不住就算了 */ }
+}
+async function looksWiped() {
+  const old = libCountSaved();
+  if (!old) return false;
+  try { return (await LMS.trackCount()) < old / 2; } catch (_) { return false; }
+}
+function fixMode(on) {
+  Scan.fix = !!on;
+  if (typeof Views !== "undefined") Views.setLocked(on);
+  if (on) S.queueKey = "";   // 队列马上重画：已对回曲库的临时条目换回原样（旧 id 清库后作废）
+}
 const SCAN_STEP = [   // 步骤名取自 LMS strings.txt 的 *_PROGRESS
   [/^discovering/i, "查找文件"], [/_deleted$/i, "移除已删除的"], [/_new$|_media$/i, "读取新文件"], [/_changed$/i, "读取改动的文件"],
   [/^playlist/i, "播放列表"], [/^mergeva/i, "合并群星专辑"], [/artwork/i, "封面"], [/^cleanup/i, "清理数据库"],
@@ -1513,7 +1592,11 @@ function scanShow(r) {
   const on = !!r;
   item.classList.toggle("scanning", on);
   $("btn-set").classList.toggle("scanning", on);
-  $("scan-title").textContent = on ? "正在扫描曲库…" : "重新扫描曲库";
+  $("scan-title").textContent = on ? (Scan.fix ? "正在修复曲库…" : "正在扫描曲库…") : "重新扫描曲库";
+  // 扫描期间「修复曲库」勾选项灰掉不能改；扫完取消勾选（不记住，每次要用再勾）
+  const fix = $("set-fix");
+  fix.disabled = on; $("set-fix-row").classList.toggle("off", on);
+  if (!on) fixOpts(false);   // 扫完收起「修复曲库」并取消勾选
   sub.hidden = !on;
   if (!on) return;
   const steps = String(r.steps || "").split(",").filter(Boolean);
@@ -1530,29 +1613,45 @@ async function scanTick() {
   let r = null;
   try { r = await LMS.rescanProgress(); } catch (_) { /* 连不上：下次再查 */ }
   if (r && Number(r.rescan) === 1) {
+    // 不是本页发起的扫描（打开页面时已在扫、或别处刚发起）：看曲目数判断是不是清库重扫
+    if (!Scan.on && !Scan.fix && await looksWiped()) fixMode(true);
     Scan.on = Scan.seen = true;
     scanShow(r);
   } else if (r && Scan.on) {
     // 刚发出 rescan 时扫描程序还没起来，会先报 rescan:0；10 秒内没见到过「扫描中」就继续等
     if (!Scan.seen && Date.now() - Scan.since < 10000) { Scan.t = setTimeout(scanTick, 1000); return; }
+    const fixed = Scan.fix;
     Scan.on = false;
+    if (fixed) fixMode(false);
     scanShow(null);
-    toast(r.lastscanfailed ? "曲库扫描失败：" + r.lastscanfailed : "曲库扫描完成");
+    toast(r.lastscanfailed ? (fixed ? "曲库修复失败：" : "曲库扫描失败：") + r.lastscanfailed : fixed ? "曲库修复完成" : "曲库扫描完成");
+    if (fixed) S.queueKey = "";   // 临时条目重新对回曲库（新 id）
     if (typeof Views !== "undefined") Views.refreshPlaylists();
+    libCountSave();
     return;
   }
+  if (r && !Scan.on) libCountSave();   // 打开页面时没在扫描：记下平时的曲目数
   if (Scan.on) Scan.t = setTimeout(scanTick, document.hidden ? 10000 : 2000);
 }
 async function startScan() {
-  if (Scan.on) return toast("正在扫描曲库，请稍候");
-  if (!await ask({
+  if (Scan.on) return toast(Scan.fix ? "正在修复曲库，请稍候" : "正在扫描曲库，请稍候");
+  const fix = $("set-fix").checked;
+  const yes = await ask(fix ? {
+    title: "修复曲库？", icon: "restart", ok: "修复", danger: true,
+    msg: "先清空曲库，再把所有文件重新读一遍，比普通扫描慢得多。\n"
+      + "修复期间资料库不能使用，只能控制正在播放的音乐；当前播放列表会保留，封面和心形要等修复完才恢复。\n"
+      + "存好的播放列表和「我的喜爱」不受影响。",
+  } : {
     title: "重新扫描曲库？", icon: "restart", ok: "扫描",
     msg: "只查找新增、改动和删除的文件，不会清空曲库。\n扫描期间可以照常播放；曲库很大时需要几分钟。",
-  })) return;
+  });
+  if (!yes) { $("set-fix").checked = false; return; }   // 取消：勾选也一并取消，免得下次误点成修复
   if (Scan.on) return;
   Scan.on = true; Scan.seen = false; Scan.since = Date.now();
+  if (fix) { await libCountSave(); fixMode(true); }
   scanShow({});          // 先出进度圆（转圈），等 LMS 报出步骤
-  try { await LMS.rescan(); } catch (err) { Scan.on = false; scanShow(null); return toast("扫描没能开始：" + err.message); }
+  try { await (fix ? LMS.wipecache() : LMS.rescan()); }
+  catch (err) { Scan.on = false; if (fix) fixMode(false); scanShow(null); return toast((fix ? "修复" : "扫描") + "没能开始：" + err.message); }
   Scan.t = setTimeout(scanTick, 1500);
 }
 
@@ -1605,6 +1704,7 @@ function bindSettings() {
     placeSet();
   };
   $("set-scan").onclick = startScan;
+  $("set-more").onclick = () => fixOpts($("set-fix-row").hidden);
   $("set-off").onclick = shutdownDaphile;
   const chk = $("set-sync");
   chk.checked = SyncOut.on;
